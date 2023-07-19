@@ -1,0 +1,4 @@
+confluent-kafka==2.0.2
+ess-streaming-data-types>=0.21.1
+numpy
+pykka
