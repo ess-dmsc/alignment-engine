@@ -6,9 +6,11 @@ import pykka
 import pytest
 import numpy as np
 from pykka import ActorDeadError
+from queue import Queue
 from streaming_data_types import deserialise_f144, deserialise_ev44, serialise_f144, serialise_ev44
 
 from src.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
+from src.main.actors.interpolator_actor import InterpolatorActor
 
 
 def generate_fake_ev44_events(num_messages, source_name="ev44_source_1"):
@@ -38,7 +40,11 @@ class TestDataHandlerActor:
     def data_handler_setup(self):
         self.data_handler_supervisor_mock = MagicMock()
         self.data_handler_logic_mock = MagicMock(spec=DataHandlerLogic)
-        self.actor_ref = DataHandlerActor.start(self.data_handler_supervisor_mock, self.data_handler_logic_mock)
+        self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
+        self.actor_ref = DataHandlerActor.start(
+            self.data_handler_supervisor_mock,
+            self.interpolator_actor_mock,
+            self.data_handler_logic_mock)
         self.actor_proxy = self.actor_ref.proxy()
         yield
         pykka.ActorRegistry.stop_all()
@@ -133,7 +139,9 @@ class TestDataHandlerActorConcurrency:
     def data_handler_setup(self):
         self.data_handler_supervisor_mocks = [MagicMock() for _ in range(10)]
         self.data_handler_logic_mocks = [MagicMock(spec=DataHandlerLogic) for _ in range(10)]
+        self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
         self.actor_refs = [DataHandlerActor.start(self.data_handler_supervisor_mocks[i],
+                                                  self.interpolator_actor_mock,
                                                   self.data_handler_logic_mocks[i]) for i in range(10)]
         self.actor_proxies = [ref.proxy() for ref in self.actor_refs]
         yield
@@ -176,6 +184,86 @@ class TestDataHandlerActorConcurrency:
 
         for data_handler_logic_mock in self.data_handler_logic_mocks:
             assert data_handler_logic_mock.on_data_received.call_count == 10
+
+class TestDataHandlerActorSendToInterpolator:
+
+    @pytest.fixture
+    def data_handler_setup(self):
+        self.data_handler_supervisor_mock = MagicMock()
+        self.data_handler_logic_mock = MagicMock(spec=DataHandlerLogic)
+        self.data_handler_logic_mock.configure_mock(value_data=[], time_data=[])
+        self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
+        self.interpolator_actor_mock.actor_ref.tell = MagicMock()
+        self.actor_ref = DataHandlerActor.start(
+            self.data_handler_supervisor_mock,
+            self.interpolator_actor_mock,
+            self.data_handler_logic_mock
+        )
+        self.actor_proxy = self.actor_ref.proxy()
+        yield
+        pykka.ActorRegistry.stop_all()
+
+    def test_on_receive_data_calls_send_to_interpolator(self, data_handler_setup):
+        fake_data = generate_fake_ev44_events(1)[0]
+        self.actor_proxy.on_receive({'data': fake_data}).get()
+
+        expected_data = {
+            'sender': self.actor_ref.actor_urn,
+            'data': {
+                'value': self.data_handler_logic_mock.value_data,
+                'time': self.data_handler_logic_mock.time_data,
+            }
+        }
+
+        self.interpolator_actor_mock.actor_ref.tell.assert_called_once_with(expected_data)
+
+
+class TestDataHandlerActorSendToInterpolatorConcurrency:
+    @pytest.fixture
+    def data_handler_setup(self):
+        self.data_handler_supervisor_mocks = [MagicMock() for _ in range(10)]
+        self.data_handler_logic_mocks = [MagicMock(spec=DataHandlerLogic) for _ in range(10)]
+        for mock in self.data_handler_logic_mocks:
+            mock.configure_mock(value_data=[], time_data=[])
+        self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
+        self.actor_refs = [DataHandlerActor.start(self.data_handler_supervisor_mocks[i],
+                                                  self.interpolator_actor_mock,
+                                                  self.data_handler_logic_mocks[i]) for i in range(10)]
+        self.actor_proxies = [ref.proxy() for ref in self.actor_refs]
+        self.calls_queue = Queue()
+        yield
+        pykka.ActorRegistry.stop_all()
+
+    def test_multiple_actors_send_data_concurrently(self, data_handler_setup):
+        fake_data = generate_fake_ev44_events(1)[0]
+
+        def send_messages(actor_proxy, data_handler_logic_mock, actor_ref):
+            for _ in range(10):
+                actor_proxy.on_receive({'data': fake_data}).get()
+
+                expected_data = {
+                    'sender': actor_ref.actor_urn,
+                    'data': {
+                        'value': data_handler_logic_mock.value_data,
+                        'time': data_handler_logic_mock.time_data,
+                    }
+                }
+
+                self.interpolator_actor_mock.actor_ref.tell(expected_data)
+                self.calls_queue.put(expected_data)
+
+        threads = [
+            threading.Thread(target=send_messages, args=(self.actor_proxies[i], self.data_handler_logic_mocks[i], self.actor_refs[i]))
+            for i in range(10)
+        ]
+
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert self.calls_queue.qsize() == 10 * 10
+
 
 
 @pytest.fixture

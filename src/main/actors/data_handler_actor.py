@@ -3,9 +3,10 @@ import pykka
 
 
 class DataHandlerActor(pykka.ThreadingActor):
-    def __init__(self, data_handler_supervisor, data_handler_logic):
+    def __init__(self, data_handler_supervisor, interpolator_actor, data_handler_logic):
         super().__init__()
         self.data_handler_supervisor = data_handler_supervisor
+        self.interpolator_actor = interpolator_actor
         self.data_handler_logic = data_handler_logic
         self.status = 'IDLE'
 
@@ -20,6 +21,7 @@ class DataHandlerActor(pykka.ThreadingActor):
         elif isinstance(message, dict) and 'data' in message:
             try:
                 self.data_handler_logic.on_data_received(message)
+                self.send_to_interpolator()
             except Exception as e:
                 print(f"Data handler error: {e}")
         else:
@@ -36,6 +38,16 @@ class DataHandlerActor(pykka.ThreadingActor):
         self.data_handler_logic.stop()
         super().stop()
 
+    def send_to_interpolator(self):
+        data = {
+            'sender': self.actor_urn,  # Assuming actor_urn as sender's unique identifier
+            'data': {
+                'value': self.data_handler_logic.value_data,
+                'time': self.data_handler_logic.time_data,
+            }
+        }
+        self.interpolator_actor.actor_ref.tell(data)
+
 
 class DataHandlerLogic:
     def __init__(self):
@@ -43,10 +55,11 @@ class DataHandlerLogic:
         self.value_data = []
         self.time_data = []
 
-    def on_data_received(self, data):
+    def on_data_received(self, message):
         if not self.active:
             return
 
+        data = message['data']['data']
         data_type = self.get_data_type(data)
         if data_type is None:
             return

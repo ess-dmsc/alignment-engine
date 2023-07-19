@@ -1,8 +1,9 @@
+import threading
+
 import pykka
 from confluent_kafka import KafkaException
 
-from streaming_data_types.utils import get_schema
-from streaming_data_types import deserialise_ev44, serialise_ev44, deserialise_f144, serialise_f144
+from streaming_data_types import deserialise_ev44, deserialise_f144
 
 
 deserialiser_by_schema = {
@@ -17,28 +18,27 @@ class ConsumerActor(pykka.ThreadingActor):
         self.consumer_logic = consumer_logic
         self.consumer_supervisor = consumer_supervisor
         self.data_handler_actor = data_handler_actor
+        self.consumer_logic.set_callback(self.on_data_received)
         self.status = 'IDLE'
 
     def on_receive(self, message):
         if message == 'START':
-            self.consumer_logic.consume_messages()
             self.status = 'RUNNING'
+            self.actor_ref.tell('CONSUME')
         elif message == 'STOP':
             self.stop()
+        elif message == 'CONSUME':
+            self.consumer_logic.consume_message()
         elif isinstance(message, dict) and 'data' in message:
-            self.data_handler_actor.on_receive(message)
+            self.data_handler_actor.tell(message)
         else:
             print(f"Unknown message: {message}")
 
-    def on_start(self):
-        self.actor_ref.proxy().consume_messages()
-
-    def consume_messages(self):
-        self.consumer_logic.consume_messages()
-        self.status = 'RUNNING'
-
     def on_data_received(self, data):
-        self.actor_ref.tell({'data': data})
+        if data == 'CONSUME':
+            self.actor_ref.tell(data)
+        else:
+            self.actor_ref.tell({'data': data})
 
     def get_status(self):
         return self.status
@@ -49,17 +49,24 @@ class ConsumerActor(pykka.ThreadingActor):
 
 
 class ConsumerLogic:
-    def __init__(self, consumer, on_data_received, source_name=None):
+    def __init__(self, consumer, callback=None, source_name=None):
         self.consumer = consumer
-        self.on_data_received = on_data_received
+        self.callback = callback
         self.running = True
         self.source_name = source_name
 
-    def consume_messages(self):
-        while self.running:
-            msg = self._poll_message()
-            if msg is not None:
-                self._process_message(msg)
+    # def consume_messages(self):
+    #     while self.running:
+    #         msg = self._poll_message()
+    #         if msg is not None:
+    #             self._process_message(msg)
+
+    def consume_message(self):
+        msg = self._poll_message()
+        if msg is not None:
+            self._process_message(msg)
+        if self.running:
+            self.callback('CONSUME')
 
     def _poll_message(self):
         try:
@@ -97,9 +104,12 @@ class ConsumerLogic:
             if self.source_name is not None:
                 if decoded_message.source_name != self.source_name:
                     return
-            self.on_data_received({'data': decoded_message})
+            self.callback({'data': decoded_message})
         except UnicodeDecodeError:
             print("Cannot deserialise message")
+
+    def set_callback(self, callback):
+        self.callback = callback
 
     def stop(self):
         self.running = False
