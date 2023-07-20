@@ -82,6 +82,8 @@ class DataHandlerLogic:
     def process_ev44_data(self, data):
         try:
             value_data = len(data.time_of_flight)
+            if value_data == 0:
+                return 0, data.reference_time[0]
             time_data = data.reference_time[0] + np.min(data.time_of_flight)
         except TypeError:
             return None, None

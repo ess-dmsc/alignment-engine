@@ -1,8 +1,6 @@
-import time
 import numpy as np
 import pykka
 from scipy.interpolate import interp1d
-from collections import deque
 
 
 class InterpolatorActor(pykka.ThreadingActor):
@@ -82,7 +80,7 @@ class InterpolatorLogic:
             *self.get_ordered_raw_data()
         )
 
-        self.interpolated_data = {sender: {'time': common_ts, 'value': data} for sender, data in
+        self.interpolated_data = {sender: data for sender, data in
                                   zip(self.raw_data.keys(), interp_data)}
 
         return self.interpolated_data

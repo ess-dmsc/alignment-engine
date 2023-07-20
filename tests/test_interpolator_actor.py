@@ -7,7 +7,6 @@ import pykka
 from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
 
 
-
 class TestInterpolatorActor:
     @pytest.fixture
     def interpolator_actor_setup(self):
@@ -195,13 +194,9 @@ def test_interpolate_to_common_timestamps(interpolator_logic):
         interpolator_logic.process_data(data)
 
     results = interpolator_logic.get_results()
-    time1 = results["sender1"]["time"]
-    time2 = results["sender2"]["time"]
-    value1 = results["sender1"]["value"]
-    value2 = results["sender2"]["value"]
+    value1 = results["sender1"]
+    value2 = results["sender2"]
 
-    assert np.all(time1 == time2)
-    assert len(time1) == 4
     assert np.allclose(value1, [1.0, 2.0, 3.0, 4.0])
     assert np.allclose(value2, [3.0, 4.0, 5.0, 6.0])
 
@@ -227,10 +222,8 @@ def test_multiple_messages_different_senders(interpolator_logic):
     for i, result in enumerate(results):
         i += 1
         sender = f'sender{i}'
-        expected_time = np.unique(np.concatenate(time_list[:i+1]))
         expected_value = np.unique(np.concatenate(value_list[:i+1]))
-        assert np.allclose(result[sender]['time'], expected_time), f"Time for {sender} incorrect"
-        assert np.allclose(result[sender]['value'], expected_value), f"Values for {sender} incorrect"
+        assert np.allclose(result[sender], expected_value), f"Values for {sender} incorrect"
         assert sender in result, f"Result for {sender} not in results"
 
 
@@ -256,10 +249,8 @@ def test_multiple_messages_same_sender(interpolator_logic):
     for i, (sender_id, result) in enumerate(zip(sender_list[1::], results)):
         i += 1
         sender = f'sender{sender_id}'
-        expected_time = np.unique(np.concatenate(time_list[i-1:i + 1]))
         expected_value = np.unique(np.concatenate(value_list[i-1:i + 1]))
-        assert np.allclose(result[sender]['time'], expected_time), f"Time for {sender} incorrect"
-        assert np.allclose(result[sender]['value'], expected_value), f"Values for {sender} incorrect"
+        assert np.allclose(result[sender], expected_value), f"Values for {sender} incorrect"
         assert sender in result, f"Result for {sender} not in results"
 
 
