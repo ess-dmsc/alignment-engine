@@ -34,7 +34,6 @@ def generate_fake_f144_data(num_messages, source_name="f144_source_1"):
     return data
 
 
-
 class TestDataHandlerActor:
     @pytest.fixture
     def data_handler_setup(self):
@@ -193,7 +192,7 @@ class TestDataHandlerActorSendToInterpolator:
         self.data_handler_logic_mock = MagicMock(spec=DataHandlerLogic)
         self.data_handler_logic_mock.configure_mock(value_data=[], time_data=[])
         self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
-        self.interpolator_actor_mock.actor_ref.tell = MagicMock()
+        self.interpolator_actor_mock.tell = MagicMock()
         self.actor_ref = DataHandlerActor.start(
             self.data_handler_supervisor_mock,
             self.interpolator_actor_mock,
@@ -215,7 +214,7 @@ class TestDataHandlerActorSendToInterpolator:
             }
         }
 
-        self.interpolator_actor_mock.actor_ref.tell.assert_called_once_with(expected_data)
+        self.interpolator_actor_mock.tell.assert_called_once_with(expected_data)
 
 
 class TestDataHandlerActorSendToInterpolatorConcurrency:
@@ -226,6 +225,7 @@ class TestDataHandlerActorSendToInterpolatorConcurrency:
         for mock in self.data_handler_logic_mocks:
             mock.configure_mock(value_data=[], time_data=[])
         self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
+        self.interpolator_actor_mock.tell = MagicMock()
         self.actor_refs = [DataHandlerActor.start(self.data_handler_supervisor_mocks[i],
                                                   self.interpolator_actor_mock,
                                                   self.data_handler_logic_mocks[i]) for i in range(10)]
@@ -249,7 +249,7 @@ class TestDataHandlerActorSendToInterpolatorConcurrency:
                     }
                 }
 
-                self.interpolator_actor_mock.actor_ref.tell(expected_data)
+                self.interpolator_actor_mock.tell(expected_data)
                 self.calls_queue.put(expected_data)
 
         threads = [
@@ -276,7 +276,7 @@ def test_on_data_received_f144(data_handler):
     deserialized_data = [deserialise_f144(data) for data in fake_data]
 
     for data in deserialized_data:
-        data_handler.on_data_received(data)
+        data_handler.on_data_received({'data': data})
 
     assert len(data_handler.value_data) == 10
     assert len(data_handler.time_data) == 10
@@ -292,7 +292,7 @@ def test_on_data_received_ev44(data_handler):
     deserialized_data = [deserialise_ev44(data) for data in fake_data]
 
     for data in deserialized_data:
-        data_handler.on_data_received(data)
+        data_handler.on_data_received({'data': data})
 
     assert len(data_handler.value_data) == 10
     assert len(data_handler.time_data) == 10
@@ -322,7 +322,7 @@ def test_stop(data_handler):
 def test_reset(data_handler):
     fake_data = generate_fake_f144_data(10)
     deserialized_data = deserialise_f144(fake_data[0])
-    data_handler.on_data_received(deserialized_data)
+    data_handler.on_data_received({'data': deserialized_data})
     data_handler.stop()
     data_handler.reset()
     assert len(data_handler.value_data) == 0
@@ -349,7 +349,7 @@ def test_faulty_ev44_data(data_handler):
             self.reference_time = None
 
     faulty_ev44 = FaultyEv44()
-    data_handler.on_data_received(faulty_ev44)
+    data_handler.on_data_received({'data': faulty_ev44})
     assert len(data_handler.value_data) == 0
     assert len(data_handler.time_data) == 0
 
@@ -361,7 +361,7 @@ def test_faulty_f144_data(data_handler):
             self.timestamp_unix_ns = None
 
     faulty_f144 = FaultyF144()
-    data_handler.on_data_received(faulty_f144)
+    data_handler.on_data_received({'data': faulty_f144})
     assert len(data_handler.value_data) == 0
     assert len(data_handler.time_data) == 0
 

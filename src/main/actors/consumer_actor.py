@@ -35,10 +35,7 @@ class ConsumerActor(pykka.ThreadingActor):
             print(f"Unknown message: {message}")
 
     def on_data_received(self, data):
-        if data == 'CONSUME':
-            self.actor_ref.tell(data)
-        else:
-            self.actor_ref.tell({'data': data})
+        self.actor_ref.tell(data)
 
     def get_status(self):
         return self.status
@@ -54,12 +51,6 @@ class ConsumerLogic:
         self.callback = callback
         self.running = True
         self.source_name = source_name
-
-    # def consume_messages(self):
-    #     while self.running:
-    #         msg = self._poll_message()
-    #         if msg is not None:
-    #             self._process_message(msg)
 
     def consume_message(self):
         msg = self._poll_message()

@@ -1,11 +1,86 @@
-import multiprocessing
-import os
-import time
-from queue import Full
+import threading
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from src.main.actors.interpolator_actor import InterpolatorLogic
+import pykka
+from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
+
+
+
+class TestInterpolatorActor:
+    @pytest.fixture
+    def interpolator_actor_setup(self):
+        self.state_machine_actor_mock = MagicMock()
+        self.fitting_actor_mock = MagicMock()
+        self.interpolator_logic_mock = MagicMock(spec=InterpolatorLogic)
+        self.actor_ref = InterpolatorActor.start(
+            self.state_machine_actor_mock,
+            self.fitting_actor_mock,
+            self.interpolator_logic_mock)
+        self.actor_proxy = self.actor_ref.proxy()
+        yield
+        pykka.ActorRegistry.stop_all()
+
+    def test_on_start_interpolator_actor(self, interpolator_actor_setup):
+        self.actor_proxy.on_receive('START').get()
+        assert self.actor_proxy.get_status().get() == 'RUNNING'
+
+    def test_on_receive_stop_interpolator_actor(self, interpolator_actor_setup):
+        self.actor_proxy.on_receive('STOP').get()
+        assert self.actor_proxy.get_status().get() == 'IDLE'
+
+    def test_on_receive_reset_interpolator_actor(self, interpolator_actor_setup):
+        self.actor_proxy.on_receive('RESET').get()
+        self.interpolator_logic_mock.reset.assert_called_once()
+
+    def test_on_receive_data_interpolator_actor(self, interpolator_actor_setup):
+        fake_data = generate_data('sender1', [1, 2, 3], [1, 2, 3])
+        self.actor_proxy.on_receive(fake_data).get()
+        self.interpolator_logic_mock.process_data.assert_called_once_with(fake_data)
+
+    def test_get_results_interpolator_actor(self, interpolator_actor_setup):
+        self.actor_proxy.get_results().get()
+        self.interpolator_logic_mock.get_results.assert_called_once()
+
+    def test_interpolator_actor_concurrency(self, interpolator_actor_setup):
+        thread_count = 10
+        message_count = 1000
+        fake_data = generate_data('sender1', [1, 2, 3], [1, 2, 3])
+
+        def send_messages():
+            for _ in range(message_count):
+                self.actor_proxy.on_receive(fake_data).get()
+
+        threads = [threading.Thread(target=send_messages) for _ in range(thread_count)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert self.interpolator_logic_mock.process_data.call_count == thread_count * message_count
+
+    def test_on_receive_data_format_interpolator_actor(self, interpolator_actor_setup):
+        fake_data = generate_data('sender1', [1, 2, 3], [1, 2, 3])
+
+        self.actor_proxy.on_receive(fake_data).get()
+        self.interpolator_logic_mock.process_data.assert_called_once_with(fake_data)
+
+    def test_outgoing_data_to_fitting_actor(self, interpolator_actor_setup):
+        fake_data = generate_data('sender1', [1, 2, 3], [1, 2, 3])
+        self.interpolator_logic_mock.get_results.return_value = {}
+        self.actor_proxy.on_receive(fake_data).get()
+
+        expected_result = {
+            'sender1': {
+                'value': [1, 2, 3],
+                'time': [1, 2, 3]
+            }
+        }
+        self.interpolator_logic_mock.get_results.return_value = expected_result
+        self.actor_proxy.on_receive(fake_data).get()
+
+        self.fitting_actor_mock.tell.assert_called_once_with({'data': expected_result})
 
 
 # Fixture for InterpolatorLogic setup
@@ -120,10 +195,10 @@ def test_interpolate_to_common_timestamps(interpolator_logic):
         interpolator_logic.process_data(data)
 
     results = interpolator_logic.get_results()
-    time1 = results[-1]["sender1"]["time"]
-    time2 = results[-1]["sender2"]["time"]
-    value1 = results[-1]["sender1"]["value"]
-    value2 = results[-1]["sender2"]["value"]
+    time1 = results["sender1"]["time"]
+    time2 = results["sender2"]["time"]
+    value1 = results["sender1"]["value"]
+    value2 = results["sender2"]["value"]
 
     assert np.all(time1 == time2)
     assert len(time1) == 4
@@ -141,10 +216,12 @@ def test_multiple_messages_different_senders(interpolator_logic):
         for i, (v, t) in enumerate(zip(value_list, time_list))
     ]
 
+    results = []
     for data in data_list:
         interpolator_logic.process_data(data)
-
-    results = interpolator_logic.get_results()
+        result = interpolator_logic.get_results()
+        if result:
+            results.append(result)
 
     assert len(results) == num_messages - 1, f"Should receive {num_messages - 1} results"
     for i, result in enumerate(results):
@@ -168,10 +245,12 @@ def test_multiple_messages_same_sender(interpolator_logic):
         for i, v, t in zip(sender_list, value_list, time_list)
     ]
 
+    results = []
     for data in data_list:
         interpolator_logic.process_data(data)
-
-    results = interpolator_logic.get_results()
+        result = interpolator_logic.get_results()
+        if result:
+            results.append(result)
 
     assert len(results) == num_messages - 1, f"Should receive {num_messages - 1} results"
     for i, (sender_id, result) in enumerate(zip(sender_list[1::], results)):

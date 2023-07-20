@@ -46,7 +46,7 @@ class DataHandlerActor(pykka.ThreadingActor):
                 'time': self.data_handler_logic.time_data,
             }
         }
-        self.interpolator_actor.actor_ref.tell(data)
+        self.interpolator_actor.tell(data)
 
 
 class DataHandlerLogic:
@@ -59,7 +59,7 @@ class DataHandlerLogic:
         if not self.active:
             return
 
-        data = message['data']['data']
+        data = message['data']
         data_type = self.get_data_type(data)
         if data_type is None:
             return

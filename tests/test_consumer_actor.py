@@ -29,15 +29,19 @@ class TestConsumerActor:
         pykka.ActorRegistry.stop_all()
 
     def test_on_start_consumes_messages(self, setup):
-        self.consumer_logic_mock.consume_messages.assert_called_once()
+        self.actor_ref.tell('START')
+        time.sleep(0.01)
+        self.consumer_logic_mock.consume_message.assert_called_once()
 
     def test_on_receive_forwards_message_to_data_handler_actor(self, setup):
         some_data = [1, 2, 3]
         self.actor_proxy.on_receive({'data': some_data}).get()
-        self.data_handler_actor_mock.on_receive.assert_called_once_with({'data': some_data})
+        self.data_handler_actor_mock.tell.assert_called_once_with({'data': some_data})
 
     def test_on_receive_starts_and_stops_consuming_messages(self, setup):
-        self.consumer_logic_mock.consume_messages.assert_called_once()
+        self.actor_ref.tell('START')
+        time.sleep(0.01)
+        self.consumer_logic_mock.consume_message.assert_called_once()
         self.actor_proxy.on_receive('STOP').get()
         assert self.consumer_logic_mock.stop.called
 
@@ -46,7 +50,7 @@ class TestConsumerActor:
 
         with unittest.mock.patch.object(self.actor_ref, 'tell') as mock_tell:
             self.actor_proxy.on_data_received(some_data).get()
-            mock_tell.assert_called_once_with({'data': some_data})
+            mock_tell.assert_called_once_with(some_data)
 
     def test_stop_stops_consumer_logic_and_super(self, setup):
         self.actor_proxy.stop().get()
@@ -56,6 +60,9 @@ class TestConsumerActor:
         thread_count = 10
         message_count = 1000
         some_data = [1, 2, 3]
+
+        self.actor_ref.tell('START')
+        time.sleep(0.01)
 
         def send_messages():
             for _ in range(message_count):
@@ -67,7 +74,7 @@ class TestConsumerActor:
         for thread in threads:
             thread.join()
 
-        assert self.data_handler_actor_mock.on_receive.call_count == thread_count * message_count
+        assert self.data_handler_actor_mock.tell.call_count == thread_count * message_count
 
     def test_on_receive_ignores_incorrect_commands(self, setup):
         self.actor_proxy.on_receive('INCORRECT_COMMAND').get()
@@ -78,6 +85,9 @@ class TestConsumerActor:
         message_count = 10000  # large number of messages
         some_data = np.random.rand(1000, 1000)  # large data
 
+        self.actor_ref.tell('START')
+        time.sleep(0.01)
+
         def send_messages():
             for _ in range(message_count):
                 self.actor_proxy.on_receive({'data': some_data}).get()
@@ -86,25 +96,21 @@ class TestConsumerActor:
         thread.start()
         thread.join()
 
-        assert self.data_handler_actor_mock.on_receive.call_count == message_count
+        assert self.data_handler_actor_mock.tell.call_count == message_count
 
     def test_stop_during_message_consumption(self, setup):
         def consume_messages_long():
             time.sleep(0.2)  # sleep to simulate long running task
 
-        self.consumer_logic_mock.consume_messages.side_effect = consume_messages_long
+        self.consumer_logic_mock.consume_message.side_effect = consume_messages_long
 
-        thread = threading.Thread(target=lambda: self.actor_proxy.on_receive('START').get())
-        thread.start()
-
-        time.sleep(0.1)  # sleep to ensure consume_messages_long() has started
+        self.actor_ref.tell('START')
+        time.sleep(0.1)
 
         self.actor_proxy.on_receive('STOP').get()
         assert self.consumer_logic_mock.stop.called
         with pytest.raises(ActorDeadError):
             self.actor_proxy.on_receive({'data': [1, 2, 3]}).get()
-        thread.join()
-
 
 
 class TestConsumerActorConcurrency:
@@ -125,6 +131,10 @@ class TestConsumerActorConcurrency:
         some_data = [1, 2, 3]
         messages = [{'data': some_data} for _ in range(message_count)]
 
+        for actor in self.actor_refs:
+            actor.tell('START')
+        time.sleep(0.01)
+
         def send_messages(actor_proxy, messages):
             for message in messages:
                 actor_proxy.on_receive(message).get()
@@ -138,7 +148,7 @@ class TestConsumerActorConcurrency:
             thread.join()
 
         for data_handler_actor_mock in self.data_handler_actor_mocks:
-            assert data_handler_actor_mock.on_receive.call_count == message_count
+            assert data_handler_actor_mock.tell.call_count == message_count
 
 
 class TestConsumerActorStatus:
@@ -157,6 +167,10 @@ class TestConsumerActorStatus:
     def test_consumer_supervisor_gets_status_concurrently(self, setup):
         def get_status(actor_proxy):
             return actor_proxy.get_status().get()
+
+        for actor in self.actor_refs:
+            actor.tell('START')
+        time.sleep(0.01)
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_results = {executor.submit(get_status, actor_proxy): actor_proxy for actor_proxy in self.actor_proxies}
@@ -187,6 +201,10 @@ class TestConsumerActorStatus:
     def test_consumer_supervisor_gets_status_concurrently_if_stopped_after(self, setup):
         def get_status(actor_proxy):
             return actor_proxy.get_status().get()
+
+        for actor in self.actor_refs:
+            actor.tell('START')
+        time.sleep(0.01)
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_results = {executor.submit(get_status, actor_proxy): actor_proxy for actor_proxy in self.actor_proxies}
@@ -226,7 +244,8 @@ def generate_fake_f144_data(num_messages, source_name="f144_source_1"):
 
 
 def test_consume_f144_data():
-    f144_data = generate_fake_f144_data(10)
+    num_messages = 10
+    f144_data = generate_fake_f144_data(num_messages)
 
     consumer_stub = ConsumerStub({})
     for i, data in enumerate(f144_data):
@@ -234,24 +253,22 @@ def test_consume_f144_data():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback)
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(num_messages):
+        consumer_logic.consume_message()
 
     assert received_data == [{'data': deserialise_f144(data)} for data in f144_data]
 
 
 def test_consume_ev44_data():
-    ev44_data = generate_fake_ev44_events(10)
+    num_messages = 10
+    ev44_data = generate_fake_ev44_events(num_messages)
     expected_data = [{'data': deserialise_ev44(data)} for data in ev44_data]
 
     consumer_stub = ConsumerStub({})
@@ -260,18 +277,15 @@ def test_consume_ev44_data():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback)
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(num_messages):
+        consumer_logic.consume_message()
 
     for received, expected in zip(received_data, expected_data):
         assert received['data'].source_name == expected['data'].source_name
@@ -293,18 +307,15 @@ def test_consume_f144_data_with_different_source_names():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received, source_name="f144_source_1")
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback, source_name="f144_source_1")
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(len(f144_data)):
+        consumer_logic.consume_message()
 
     assert received_data == [{'data': deserialise_f144(data)} for data in f144_data_1]
 
@@ -320,18 +331,15 @@ def test_consume_ev44_data_with_different_source_names():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received, source_name="ev44_source_1")
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback, source_name="ev44_source_1")
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(len(ev44_data)):
+        consumer_logic.consume_message()
 
     expected_data = [{'data': deserialise_ev44(data)} for data in ev44_data_1]
 
@@ -358,28 +366,22 @@ def test_consume_data_concurrently_with_two_consumers_with_different_source_name
     received_data_1 = []
     received_data_2 = []
 
-    def mock_on_data_received_1(fake_data):
+    def mock_callback_1(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data_1.append(fake_data)
 
-    def mock_on_data_received_2(fake_data):
+    def mock_callback_2(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data_2.append(fake_data)
 
-    consumer_logic_1 = ConsumerLogic(consumer_stub_1, mock_on_data_received_1, source_name="f144_source_1")
-    consumer_logic_2 = ConsumerLogic(consumer_stub_2, mock_on_data_received_2, source_name="f144_source_2")
+    consumer_logic_1 = ConsumerLogic(consumer_stub_1, mock_callback_1, source_name="f144_source_1")
+    consumer_logic_2 = ConsumerLogic(consumer_stub_2, mock_callback_2, source_name="f144_source_2")
 
-    thread_1 = threading.Thread(target=consumer_logic_1.consume_messages)
-    thread_1.start()
-
-    thread_2 = threading.Thread(target=consumer_logic_2.consume_messages)
-    thread_2.start()
-
-    time.sleep(0.01)
-
-    consumer_logic_1.stop()
-    thread_1.join()
-
-    consumer_logic_2.stop()
-    thread_2.join()
+    for i in range(len(f144_data)):
+        consumer_logic_1.consume_message()
+        consumer_logic_2.consume_message()
 
     assert received_data_1 == [{'data': deserialise_f144(data)} for data in f144_data_1]
     assert received_data_2 == [{'data': deserialise_f144(data)} for data in f144_data_2]
@@ -394,18 +396,15 @@ def test_consume_faulty_message():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback)
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(len(faulty_data)):
+        consumer_logic.consume_message()
 
     assert received_data == []
 
@@ -422,44 +421,17 @@ def test_consume_with_kafka_exception():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback)
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(len(all_data)):
+        consumer_logic.consume_message()
 
     assert received_data == [{'data': deserialise_f144(data)} for data in good_data]
-
-
-# Note: this test is not deterministic, but it is very unlikely to fail
-def test_stop_consumer():
-    f144_data = generate_fake_f144_data(1000)
-
-    consumer_stub = ConsumerStub({})
-    for i, data in enumerate(f144_data):
-        consumer_stub.add_message('topic', 0, i+1, None, data)
-
-    received_data = []
-
-    def mock_on_data_received(fake_data):
-        received_data.append(fake_data)
-
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
-
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    consumer_logic.stop()
-    thread.join()
-
-    assert len(received_data) < 1000
 
 
 def test_consume_with_unicode_decode_error():
@@ -474,17 +446,14 @@ def test_consume_with_unicode_decode_error():
 
     received_data = []
 
-    def mock_on_data_received(fake_data):
+    def mock_callback(fake_data):
+        if fake_data == 'CONSUME':
+            return
         received_data.append(fake_data)
 
-    consumer_logic = ConsumerLogic(consumer_stub, mock_on_data_received)
+    consumer_logic = ConsumerLogic(consumer_stub, mock_callback)
 
-    thread = threading.Thread(target=consumer_logic.consume_messages)
-    thread.start()
-
-    time.sleep(0.01)
-
-    consumer_logic.stop()
-    thread.join()
+    for i in range(len(all_data)):
+        consumer_logic.consume_message()
 
     assert received_data == [{'data': deserialise_f144(data)} for data in good_data]

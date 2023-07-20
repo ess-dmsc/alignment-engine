@@ -6,18 +6,21 @@ from collections import deque
 
 
 class InterpolatorActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_actor, interpolator_logic):
+    def __init__(self, state_machine_actor, fitting_actor, interpolator_logic):
         super().__init__()
         self.state_machine_actor = state_machine_actor
+        self.fitting_actor = fitting_actor
         self.interpolator_logic = interpolator_logic
         self.status = 'IDLE'
 
     def on_receive(self, message):
         if message == 'START':
             self.status = 'RUNNING'
+            self.interpolator_logic.start()
             self.on_start()
         elif message == 'STOP':
             self.status = 'IDLE'
+            self.interpolator_logic.stop()
         elif message == 'RESET':
             self.interpolator_logic.reset()
         elif isinstance(message, dict) and 'data' in message:
@@ -25,6 +28,12 @@ class InterpolatorActor(pykka.ThreadingActor):
                 self.interpolator_logic.process_data(message)
             except Exception as e:
                 print(f"Interpolator error: {e}")
+            try:
+                result = self.get_results()
+                if result:
+                    self.fitting_actor.tell({'data': result})
+            except Exception as e:
+                print(f"Error getting and sending results: {e}")
         else:
             print(f"Unknown message: {message}")
 
@@ -37,16 +46,17 @@ class InterpolatorActor(pykka.ThreadingActor):
     def get_results(self):
         return self.interpolator_logic.get_results()
 
+    def stop(self):
+        self.interpolator_logic.stop()
+
 
 class InterpolatorLogic:
     def __init__(self):
         self.active = True
         self.raw_data = {}
         self.interpolated_data = {}
-        self.queue = deque()
 
     def process_data(self, message):
-        current_time = time.time()
         if not self.active:
             return
 
@@ -75,7 +85,6 @@ class InterpolatorLogic:
         self.interpolated_data = {sender: {'time': common_ts, 'value': data} for sender, data in
                                   zip(self.raw_data.keys(), interp_data)}
 
-        self.queue.append(self.interpolated_data)
         return self.interpolated_data
 
     def get_ordered_raw_data(self):
@@ -112,12 +121,7 @@ class InterpolatorLogic:
     def reset(self):
         self.interpolated_data.clear()
         self.raw_data.clear()
-        self.queue.clear()
         self.active = True
 
     def get_results(self):
-        results = []
-        while self.queue:
-            result = self.queue.popleft()
-            results.append(result)
-        return results
+        return self.interpolated_data
