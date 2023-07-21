@@ -4,10 +4,11 @@ from scipy.interpolate import interp1d
 
 
 class InterpolatorActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_actor, fitting_actor, interpolator_logic):
+    def __init__(self, state_machine_actor, fitting_actor, producer_actor, interpolator_logic):
         super().__init__()
         self.state_machine_actor = state_machine_actor
         self.fitting_actor = fitting_actor
+        self.producer_actor = producer_actor
         self.interpolator_logic = interpolator_logic
         self.status = 'IDLE'
 
@@ -30,8 +31,9 @@ class InterpolatorActor(pykka.ThreadingActor):
                 result = self.get_results()
                 if result:
                     self.fitting_actor.tell({'data': result})
+                    self.producer_actor.tell({'data': result})
             except Exception as e:
-                print(f"Error getting and sending results: {e}")
+                print(f"Error getting and sending results from Interpolator: {e}")
         else:
             print(f"Unknown message: {message}")
 

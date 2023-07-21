@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 from pykka import ActorRegistry
 
 from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
+from src.main.actors.producer_actor import ProducerLogic, ProducerActor
 from tests.doubles.consumer import ConsumerStub
+from tests.doubles.producer import ProducerSpy
 from tests.test_consumer_actor import generate_fake_ev44_events, generate_fake_f144_data
 from src.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
 from src.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
@@ -223,10 +225,12 @@ class TestConsumersToInterpolator:
 
         self.state_machine_actor_mock = MagicMock()
         self.fitting_actor_mock = MagicMock()
+        self.producer_actor_inte_mock = MagicMock()
         self.interpolator_logic = InterpolatorLogic()
         self.interpolator_actor_ref = InterpolatorActor.start(
             self.state_machine_actor_mock,
             self.fitting_actor_mock,
+            self.producer_actor_inte_mock,
             self.interpolator_logic)
         self.interpolator_actor_proxy = self.interpolator_actor_ref.proxy()
 
@@ -297,18 +301,20 @@ class TestConsumersToFitter:
 
         self.state_machine_actor_mock = MagicMock()
 
-        self.producer_actor_mock = MagicMock()
+        self.producer_actor_fitt_mock = MagicMock()
         self.fitter_logic = FitterLogic()
         self.fitting_actor_ref = FitterActor.start(
             self.state_machine_actor_mock,
-            self.producer_actor_mock,
+            self.producer_actor_fitt_mock,
             self.fitter_logic)
         self.fitting_actor_proxy = self.fitting_actor_ref.proxy()
 
+        self.producer_actor_inte_mock = MagicMock()
         self.interpolator_logic = InterpolatorLogic()
         self.interpolator_actor_ref = InterpolatorActor.start(
             self.state_machine_actor_mock,
             self.fitting_actor_ref,
+            self.producer_actor_inte_mock,
             self.interpolator_logic)
         self.interpolator_actor_proxy = self.interpolator_actor_ref.proxy()
 
@@ -374,4 +380,134 @@ class TestConsumersToFitter:
         result = self.fitting_actor_proxy.get_results().get()
 
         assert np.allclose(result[self.data_handler_actor_proxys[1].actor_urn.get()]['fit_params'][2], 5, atol=0.1)
+
+
+class TestConsumersToProducers:
+    @pytest.fixture
+    def setup(self):
+        self.f144_data = generate_gauss_f144_data(101)
+        self.ev44_data = generate_gauss_ev44_events(201)
+        self.consumer_stub_f144 = ConsumerStub({})
+        self.consumer_stub_ev44 = ConsumerStub({})
+        for i, data in enumerate(self.f144_data):
+            self.consumer_stub_f144.add_message('topic', 0, i + 1, None, data)
+        for i, data in enumerate(self.ev44_data):
+            self.consumer_stub_ev44.add_message('topic', 0, i + 1, None, data)
+
+        self.state_machine_actor_mock = MagicMock()
+
+        self.output_topic = 'output_topic'
+        self.producer_supervisor_mock = MagicMock()
+
+        # Status producer [ Not Used ]
+
+        # Interpolator Producer
+        self.producer_spy_inte = ProducerSpy({})
+        self.producer_logic_inte = ProducerLogic(self.producer_spy_inte, self.output_topic)
+        self.producer_actor_ref_inte = ProducerActor.start(self.producer_supervisor_mock, self.producer_logic_inte)
+        self.producer_actor_proxy_inte = self.producer_actor_ref_inte.proxy()
+
+        # Fitter Producer
+        self.producer_spy_fitt = ProducerSpy({})
+        self.producer_logic_fitt = ProducerLogic(self.producer_spy_fitt, self.output_topic)
+        self.producer_actor_ref_fitt = ProducerActor.start(self.producer_supervisor_mock, self.producer_logic_fitt)
+        self.producer_actor_proxy_fitt = self.producer_actor_ref_fitt.proxy()
+
+        self.fitter_logic = FitterLogic()
+        self.fitting_actor_ref = FitterActor.start(
+            self.state_machine_actor_mock,
+            self.producer_actor_ref_fitt,
+            self.fitter_logic)
+        self.fitting_actor_proxy = self.fitting_actor_ref.proxy()
+
+        self.interpolator_logic = InterpolatorLogic()
+        self.interpolator_actor_ref = InterpolatorActor.start(
+            self.state_machine_actor_mock,
+            self.fitting_actor_ref,
+            self.producer_actor_ref_inte,
+            self.interpolator_logic)
+        self.interpolator_actor_proxy = self.interpolator_actor_ref.proxy()
+
+        self.data_handler_supervisor_mock = MagicMock()
+        self.data_handler_actor_refs = [DataHandlerActor.start(
+            self.data_handler_supervisor_mock,
+            self.interpolator_actor_ref,
+            DataHandlerLogic()) for i in range(2)]
+        self.data_handler_actor_proxys = [actor.proxy() for actor in self.data_handler_actor_refs]
+
+        self.consumer_supervisor_mock = MagicMock()
+        self.consumer_actor_refs = [
+            ConsumerActor.start(self.consumer_supervisor_mock, dataHandler, consumer_logic)
+            for dataHandler, consumer_logic in zip(self.data_handler_actor_refs, [
+                ConsumerLogic(self.consumer_stub_ev44),
+                ConsumerLogic(self.consumer_stub_f144),
+            ])
+        ]
+        self.consumer_actor_proxys = [actor.proxy() for actor in self.consumer_actor_refs]
+        yield
+        ActorRegistry.stop_all()
+
+    def test_two_consumers(self, setup):
+        # Check DataHandlerActor's state
+        for data_handler_actor in self.data_handler_actor_proxys:
+            assert data_handler_actor.get_status().get() == 'RUNNING'
+
+        sender1 = self.data_handler_actor_proxys[1].actor_urn.get()
+        sender2 = self.data_handler_actor_proxys[0].actor_urn.get()
+
+        conf = {
+            'control_signals': [sender1],
+            'readout_signals': [sender2],
+            'fit_function': 'gauss'
+        }
+        self.fitting_actor_ref.tell({'CONF': conf})
+
+        for consumer_actor in self.consumer_actor_refs:
+            consumer_actor.tell('START')
+
+        for consumer_actor in self.consumer_actor_proxys:
+            assert consumer_actor.get_status().get() == 'RUNNING'
+
+        time.sleep(0.1)
+
+        for consumer_actor in self.consumer_actor_refs:
+            consumer_actor.tell('STOP')
+
+        final_data_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().value_data
+        final_times_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().time_data
+        final_data_f144 = self.data_handler_actor_proxys[1].data_handler_logic.get().value_data
+        final_times_f144 = self.data_handler_actor_proxys[1].data_handler_logic.get().time_data
+
+        # Just because there sometimes is not any data for some events.
+        deserialised_data = [deserialise_ev44(dat) for dat in self.ev44_data]
+        expected_times = [
+            (dat.time_of_flight[0] + dat.reference_time if len(dat.time_of_flight) > 0 else dat.reference_time)
+            for dat
+            in deserialised_data
+        ]
+
+        assert final_data_ev44 == [len(deserialise_ev44(dat).time_of_flight) for dat in self.ev44_data]
+        assert final_times_ev44 == expected_times
+        assert final_data_f144 == [deserialise_f144(dat).value for dat in self.f144_data]
+        assert final_times_f144 == [deserialise_f144(dat).timestamp_unix_ns for dat in self.f144_data]
+
+        result = self.fitting_actor_proxy.get_results().get()
+
+        assert np.allclose(result[sender1]['fit_params'][2], 5,
+                           atol=0.1)
+
+        received_data_from_fitter_producer = deserialise_f144(self.producer_spy_fitt.data[-1]['value'])
+        received_data_from_interpolator_producer = [deserialise_f144(dat['value']) for dat in self.producer_spy_inte.data]
+
+        reduced_interpolator_data = {}
+        for dat in received_data_from_interpolator_producer:
+            reduced_interpolator_data[dat.source_name] = dat.value
+
+        result_dict = self.interpolator_actor_proxy.get_results().get()
+        sender_1_result = result_dict[sender2]
+        sender_2_result = result_dict[sender1]
+
+        assert reduced_interpolator_data[sender2].tolist() == sender_1_result.tolist()
+        assert reduced_interpolator_data[sender1].tolist() == sender_2_result.tolist()
+        assert received_data_from_fitter_producer.value.tolist() == result[sender1]['fit_params'].tolist()
 

@@ -38,7 +38,7 @@ class FitterActor(pykka.ThreadingActor):
                 if result:
                     self.producer_actor.tell({'data': result})
             except Exception as e:
-                print(f"Error getting and sending results: {e}")
+                print(f"Error getting and sending results from Fitter: {e}")
         else:
             print(f"Unknown message: {message}")
 
@@ -103,6 +103,7 @@ class FitterLogic:
             self.fit_data_dict[sender] = {
                 'fit_params': popt,
                 'r_squared': r_squared,
+                'fit_function': 'gauss',
             }
 
     def get_results(self):
@@ -121,8 +122,6 @@ class FitterLogic:
         self.readout_signals = []
         self.conf = {}
         self.fit_data_dict = {}
-
-
 
 
 def gauss_func(x, h, a, x0, var):

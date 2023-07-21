@@ -1,5 +1,3 @@
-import threading
-
 import pykka
 from confluent_kafka import KafkaException
 
