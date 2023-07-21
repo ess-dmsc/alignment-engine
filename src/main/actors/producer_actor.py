@@ -14,12 +14,33 @@ class ProducerActor(pykka.ThreadingActor):
         self.producer_supervisor = producer_supervisor
         self.status = 'IDLE'
 
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        self.producer_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        self.status = 'RUNNING'
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.producer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
     def on_receive(self, message):
-        if message == 'START':
-            self.status = 'RUNNING'
-        elif message == 'STOP':
-            self.stop()
-        elif isinstance(message, dict) and 'data' in message:
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.status = 'RUNNING'
+            elif command == 'STOP':
+                self.stop()
+            elif command == 'RESET':
+                pass
+            elif command == 'STATUS':
+                return self.get_status()
+
+        data = message.get('data', None)
+        if data is not None:
             self.producer_logic.produce_message(message)
         else:
             print(f"Unknown message: {message}")

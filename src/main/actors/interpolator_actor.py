@@ -4,25 +4,44 @@ from scipy.interpolate import interp1d
 
 
 class InterpolatorActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_actor, fitting_actor, producer_actor, interpolator_logic):
+    def __init__(self, state_machine_supervisor, fitting_actor, producer_actor, interpolator_logic):
         super().__init__()
-        self.state_machine_actor = state_machine_actor
+        self.state_machine_supervisor = state_machine_supervisor
         self.fitting_actor = fitting_actor
         self.producer_actor = producer_actor
         self.interpolator_logic = interpolator_logic
         self.status = 'IDLE'
 
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        self.status = 'RUNNING'
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
     def on_receive(self, message):
-        if message == 'START':
-            self.status = 'RUNNING'
-            self.interpolator_logic.start()
-            self.on_start()
-        elif message == 'STOP':
-            self.status = 'IDLE'
-            self.interpolator_logic.stop()
-        elif message == 'RESET':
-            self.interpolator_logic.reset()
-        elif isinstance(message, dict) and 'data' in message:
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.status = 'RUNNING'
+                self.interpolator_logic.start()
+                self.on_start()
+            elif command == 'STOP':
+                self.status = 'IDLE'
+                self.interpolator_logic.stop()
+            elif command == 'RESET':
+                self.interpolator_logic.reset()
+            elif command == 'STATUS':
+                return self.get_status()
+
+        data = message.get('data', None)
+        if data is not None:
             try:
                 self.interpolator_logic.process_data(message)
             except Exception as e:
@@ -36,9 +55,6 @@ class InterpolatorActor(pykka.ThreadingActor):
                 print(f"Error getting and sending results from Interpolator: {e}")
         else:
             print(f"Unknown message: {message}")
-
-    def on_start(self):
-        pass
 
     def get_status(self):
         return self.status

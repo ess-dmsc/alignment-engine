@@ -10,15 +10,35 @@ class DataHandlerActor(pykka.ThreadingActor):
         self.data_handler_logic = data_handler_logic
         self.status = 'IDLE'
 
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        self.data_handler_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        self.data_handler_logic.active = True
+        self.status = 'RUNNING'
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.data_handler_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
     def on_receive(self, message):
-        if message == 'START':
-            self.data_handler_logic.active = True
-            self.data_handler_logic.start()
-        elif message == 'STOP':
-            self.stop()
-        elif message == 'RESET':
-            self.data_handler_logic.reset()
-        elif isinstance(message, dict) and 'data' in message:
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.data_handler_logic.active = True
+                self.data_handler_logic.start()
+            elif command == 'STOP':
+                self.stop()
+            elif command == 'RESET':
+                self.data_handler_logic.reset()
+            elif command == 'STATUS':
+                return self.get_status()
+
+        data = message.get('data', None)
+        if data is not None:
             try:
                 self.data_handler_logic.on_data_received(message)
                 self.send_to_interpolator()
@@ -26,10 +46,6 @@ class DataHandlerActor(pykka.ThreadingActor):
                 print(f"Data handler error: {e}")
         else:
             print(f"Unknown message: {message}")
-
-    def on_start(self):
-        self.data_handler_logic.active = True
-        self.status = 'RUNNING'
 
     def get_status(self):
         return self.status

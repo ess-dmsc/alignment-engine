@@ -49,7 +49,7 @@ class TestDataHandlerActor:
         pykka.ActorRegistry.stop_all()
 
     def test_on_start_data_handler(self, data_handler_setup):
-        self.actor_proxy.on_receive('START').get()
+        self.actor_proxy.on_receive({'command': 'START'}).get()
         assert self.actor_proxy.get_status().get() == 'RUNNING'
 
     def test_on_receive_data_data_handler(self, data_handler_setup):
@@ -58,7 +58,7 @@ class TestDataHandlerActor:
         self.data_handler_logic_mock.on_data_received.assert_called_once()
 
     def test_on_receive_stop_data_handler(self, data_handler_setup):
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.data_handler_logic_mock.stop.called
 
     def test_data_handler_actor_concurrency(self, data_handler_setup):
@@ -98,7 +98,7 @@ class TestDataHandlerActor:
         thread.start()
 
         time.sleep(0.1)  # sleep to ensure on_data_received_long() has started
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
 
         assert self.data_handler_logic_mock.stop.called
         with pytest.raises(ActorDeadError):
@@ -148,21 +148,21 @@ class TestDataHandlerActorConcurrency:
 
     def test_multiple_actors_start_concurrently(self, data_handler_setup):
         for actor_proxy in self.actor_proxies:
-            actor_proxy.on_receive('START').get()
+            actor_proxy.on_receive({'command': 'START'}).get()
 
         for data_handler_logic_mock in self.data_handler_logic_mocks:
             assert data_handler_logic_mock.start.called
 
     def test_multiple_actors_stop_concurrently(self, data_handler_setup):
         for actor_proxy in self.actor_proxies:
-            actor_proxy.on_receive('STOP').get()
+            actor_proxy.on_receive({'command': 'STOP'}).get()
 
         for data_handler_logic_mock in self.data_handler_logic_mocks:
             assert data_handler_logic_mock.stop.called
 
     def test_multiple_actors_reset_concurrently(self, data_handler_setup):
         for actor_proxy in self.actor_proxies:
-            actor_proxy.on_receive('RESET').get()
+            actor_proxy.on_receive({'command': 'RESET'}).get()
 
         for data_handler_logic_mock in self.data_handler_logic_mocks:
             assert data_handler_logic_mock.reset.called

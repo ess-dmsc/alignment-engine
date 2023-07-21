@@ -19,16 +19,37 @@ class ConsumerActor(pykka.ThreadingActor):
         self.consumer_logic.set_callback(self.on_data_received)
         self.status = 'IDLE'
 
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        self.consumer_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        self.status = 'RUNNING'
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.consumer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
     def on_receive(self, message):
-        if message == 'START':
-            self.status = 'RUNNING'
-            self.actor_ref.tell('CONSUME')
-        elif message == 'STOP':
-            self.stop()
-        elif message == 'CONSUME':
-            self.consumer_logic.consume_message()
-        elif isinstance(message, dict) and 'data' in message:
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.status = 'RUNNING'
+                self.actor_ref.tell({'command': 'CONSUME'})
+            elif command == 'STOP':
+                self.stop()
+            elif command == 'CONSUME':
+                self.consumer_logic.consume_message()
+            elif command == 'STATUS':
+                return self.get_status()
+            return
+
+        data = message.get('data', None)
+        if data is not None:
             self.data_handler_actor.tell(message)
+            return
         else:
             print(f"Unknown message: {message}")
 
@@ -55,7 +76,7 @@ class ConsumerLogic:
         if msg is not None:
             self._process_message(msg)
         if self.running:
-            self.callback('CONSUME')
+            self.callback({'command': 'CONSUME'})
 
     def _poll_message(self):
         try:

@@ -23,20 +23,8 @@ class TestProducerActor:
         yield
         pykka.ActorRegistry.stop_all()
 
-    # def test_on_start_begins_producing_messages(self, setup):
-    #     self.actor_ref.tell('START')
-    #     time.sleep(0.01)
-    #     self.producer_logic_mock.produce_message.assert_called_once()
-    #
-    # def test_on_receive_starts_and_stops_producing_messages(self, setup):
-    #     self.actor_ref.tell('START')
-    #     time.sleep(0.01)
-    #     self.producer_logic_mock.produce_message.assert_called_once()
-    #     self.actor_proxy.on_receive('STOP').get()
-    #     assert self.producer_logic_mock.stop.called
-
     def test_on_data_received_tells_self(self, setup):
-        some_data = 'START'
+        some_data = {'command': 'START'}
 
         with unittest.mock.patch.object(self.actor_ref, 'tell') as mock_tell:
             self.actor_proxy.on_data_received(some_data).get()
@@ -47,7 +35,7 @@ class TestProducerActor:
         assert self.producer_logic_mock.stop.called
 
     def test_on_receive_ignores_incorrect_commands(self, setup):
-        self.actor_proxy.on_receive('INCORRECT_COMMAND').get()
+        self.actor_proxy.on_receive({'command': 'INCORRECT_COMMAND'}).get()
         self.producer_logic_mock.produce_message.assert_not_called()
         self.producer_logic_mock.stop.assert_not_called()
 
@@ -57,10 +45,10 @@ class TestProducerActor:
 
         self.producer_logic_mock.produce_message.side_effect = produce_messages_long
 
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.1)
 
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.producer_logic_mock.stop.called
 
 

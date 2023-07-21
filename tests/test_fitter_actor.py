@@ -48,15 +48,15 @@ class TestFitterActor:
         pykka.ActorRegistry.stop_all()
 
     def test_on_start_fitter_actor(self, fitter_actor_setup):
-        self.actor_proxy.on_receive('START').get()
+        self.actor_proxy.on_receive({'command': 'START'}).get()
         assert self.actor_proxy.get_status().get() == 'RUNNING'
 
     def test_on_receive_stop_fitter_actor(self, fitter_actor_setup):
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.actor_proxy.get_status().get() == 'IDLE'
 
     def test_on_receive_reset_fitter_actor(self, fitter_actor_setup):
-        self.actor_proxy.on_receive('RESET').get()
+        self.actor_proxy.on_receive({'command': 'RESET'}).get()
         self.fitter_logic_mock.reset.assert_called_once()
 
     def test_on_receive_data_fitter_actor(self, fitter_actor_setup):

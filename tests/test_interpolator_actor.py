@@ -12,25 +12,27 @@ class TestInterpolatorActor:
     def interpolator_actor_setup(self):
         self.state_machine_actor_mock = MagicMock()
         self.fitting_actor_mock = MagicMock()
+        self.proucer_actor_mock = MagicMock()
         self.interpolator_logic_mock = MagicMock(spec=InterpolatorLogic)
         self.actor_ref = InterpolatorActor.start(
             self.state_machine_actor_mock,
             self.fitting_actor_mock,
+            self.proucer_actor_mock,
             self.interpolator_logic_mock)
         self.actor_proxy = self.actor_ref.proxy()
         yield
         pykka.ActorRegistry.stop_all()
 
     def test_on_start_interpolator_actor(self, interpolator_actor_setup):
-        self.actor_proxy.on_receive('START').get()
+        self.actor_proxy.on_receive({'command': 'START'}).get()
         assert self.actor_proxy.get_status().get() == 'RUNNING'
 
     def test_on_receive_stop_interpolator_actor(self, interpolator_actor_setup):
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.actor_proxy.get_status().get() == 'IDLE'
 
     def test_on_receive_reset_interpolator_actor(self, interpolator_actor_setup):
-        self.actor_proxy.on_receive('RESET').get()
+        self.actor_proxy.on_receive({'command': 'RESET'}).get()
         self.interpolator_logic_mock.reset.assert_called_once()
 
     def test_on_receive_data_interpolator_actor(self, interpolator_actor_setup):

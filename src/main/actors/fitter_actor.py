@@ -9,26 +9,47 @@ KNOWN_FIT_FUNCTIONS = ['gauss']
 
 
 class FitterActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_actor, producer_actor, fitter_logic):
+    def __init__(self, state_machine_supervisor, producer_actor, fitter_logic):
         super().__init__()
-        self.state_machine_actor = state_machine_actor
+        self.state_machine_supervisor = state_machine_supervisor
         self.producer_actor = producer_actor
         self.fitter_logic = fitter_logic
         self.status = 'IDLE'
 
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        self.status = 'RUNNING'
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
     def on_receive(self, message):
-        if message == 'START':
-            self.status = 'RUNNING'
-            self.fitter_logic.start()
-            self.on_start()
-        elif message == 'STOP':
-            self.status = 'IDLE'
-            self.fitter_logic.stop()
-        elif message == 'RESET':
-            self.fitter_logic.reset()
-        elif isinstance(message, dict) and 'CONF' in message:
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.status = 'RUNNING'
+                self.fitter_logic.start()
+                self.on_start()
+            elif command == 'STOP':
+                self.status = 'IDLE'
+                self.fitter_logic.stop()
+            elif command == 'RESET':
+                self.fitter_logic.reset()
+            elif command == 'STATUS':
+                return self.get_status()
+
+        conf = message.get('CONF', None)
+        if conf is not None:
             self.fitter_logic.set_conf(message['CONF'])
-        elif isinstance(message, dict) and 'data' in message:
+
+        data = message.get('data', None)
+        if data is not None:
             try:
                 self.fitter_logic.fit_data(message)
             except Exception as e:
@@ -41,9 +62,6 @@ class FitterActor(pykka.ThreadingActor):
                 print(f"Error getting and sending results from Fitter: {e}")
         else:
             print(f"Unknown message: {message}")
-
-    def on_start(self):
-        pass
 
     def get_status(self):
         return self.status

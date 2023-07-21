@@ -29,7 +29,7 @@ class TestConsumerActor:
         pykka.ActorRegistry.stop_all()
 
     def test_on_start_consumes_messages(self, setup):
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.01)
         self.consumer_logic_mock.consume_message.assert_called_once()
 
@@ -39,10 +39,10 @@ class TestConsumerActor:
         self.data_handler_actor_mock.tell.assert_called_once_with({'data': some_data})
 
     def test_on_receive_starts_and_stops_consuming_messages(self, setup):
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.01)
         self.consumer_logic_mock.consume_message.assert_called_once()
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.consumer_logic_mock.stop.called
 
     def test_on_data_received_tells_self(self, setup):
@@ -61,7 +61,7 @@ class TestConsumerActor:
         message_count = 1000
         some_data = [1, 2, 3]
 
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.01)
 
         def send_messages():
@@ -77,7 +77,7 @@ class TestConsumerActor:
         assert self.data_handler_actor_mock.tell.call_count == thread_count * message_count
 
     def test_on_receive_ignores_incorrect_commands(self, setup):
-        self.actor_proxy.on_receive('INCORRECT_COMMAND').get()
+        self.actor_proxy.on_receive({'command': 'INCORRECT_COMMAND'}).get()
         self.consumer_logic_mock.stop.assert_not_called()
         self.data_handler_actor_mock.on_receive.assert_not_called()
 
@@ -85,7 +85,7 @@ class TestConsumerActor:
         message_count = 10000  # large number of messages
         some_data = np.random.rand(1000, 1000)  # large data
 
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.01)
 
         def send_messages():
@@ -104,10 +104,10 @@ class TestConsumerActor:
 
         self.consumer_logic_mock.consume_message.side_effect = consume_messages_long
 
-        self.actor_ref.tell('START')
+        self.actor_ref.tell({'command': 'START'})
         time.sleep(0.1)
 
-        self.actor_proxy.on_receive('STOP').get()
+        self.actor_proxy.on_receive({'command': 'STOP'}).get()
         assert self.consumer_logic_mock.stop.called
         with pytest.raises(ActorDeadError):
             self.actor_proxy.on_receive({'data': [1, 2, 3]}).get()
@@ -132,7 +132,7 @@ class TestConsumerActorConcurrency:
         messages = [{'data': some_data} for _ in range(message_count)]
 
         for actor in self.actor_refs:
-            actor.tell('START')
+            actor.tell({'command': 'START'})
         time.sleep(0.01)
 
         def send_messages(actor_proxy, messages):
@@ -169,7 +169,7 @@ class TestConsumerActorStatus:
             return actor_proxy.get_status().get()
 
         for actor in self.actor_refs:
-            actor.tell('START')
+            actor.tell({'command': 'START'})
         time.sleep(0.01)
 
         with ThreadPoolExecutor(max_workers=10) as executor:
@@ -189,7 +189,7 @@ class TestConsumerActorStatus:
             return actor_proxy.get_status().get()
 
         for actor_proxy in self.actor_proxies:
-            actor_proxy.on_receive('STOP').get()
+            actor_proxy.on_receive({'command': 'STOP'}).get()
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_results = {executor.submit(get_status, actor_proxy): actor_proxy for actor_proxy in self.actor_proxies}
@@ -203,14 +203,14 @@ class TestConsumerActorStatus:
             return actor_proxy.get_status().get()
 
         for actor in self.actor_refs:
-            actor.tell('START')
+            actor.tell({'command': 'START'})
         time.sleep(0.01)
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_results = {executor.submit(get_status, actor_proxy): actor_proxy for actor_proxy in self.actor_proxies}
 
         for actor_proxy in self.actor_proxies:
-            actor_proxy.on_receive('STOP').get()
+            actor_proxy.on_receive({'command': 'STOP'}).get()
 
         for future in as_completed(future_results):
             actor_proxy = future_results[future]
@@ -254,7 +254,8 @@ def test_consume_f144_data():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -278,7 +279,8 @@ def test_consume_ev44_data():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -308,7 +310,8 @@ def test_consume_f144_data_with_different_source_names():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -332,7 +335,8 @@ def test_consume_ev44_data_with_different_source_names():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -367,12 +371,14 @@ def test_consume_data_concurrently_with_two_consumers_with_different_source_name
     received_data_2 = []
 
     def mock_callback_1(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data_1.append(fake_data)
 
     def mock_callback_2(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data_2.append(fake_data)
 
@@ -397,7 +403,8 @@ def test_consume_faulty_message():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -422,7 +429,8 @@ def test_consume_with_kafka_exception():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
@@ -447,7 +455,8 @@ def test_consume_with_unicode_decode_error():
     received_data = []
 
     def mock_callback(fake_data):
-        if fake_data == 'CONSUME':
+        command = fake_data.get('command', None)
+        if command:
             return
         received_data.append(fake_data)
 
