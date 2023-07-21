@@ -92,13 +92,13 @@ class TestConsumerDataHandlerF144:
         # Check DataHandlerActor's state
         assert self.data_handler_actor_proxy.get_status().get() == 'RUNNING'
 
-        self.consumer_actor_ref.tell('START')
+        self.consumer_actor_ref.tell({'command': 'START'})
 
         assert self.consumer_actor_proxy.get_status().get() == 'RUNNING'
 
         time.sleep(0.1)
 
-        self.consumer_actor_ref.tell('STOP')
+        self.consumer_actor_ref.tell({'command': 'STOP'})
 
         final_data = self.data_handler_actor_proxy.data_handler_logic.get().value_data
         final_times = self.data_handler_actor_proxy.data_handler_logic.get().time_data
@@ -135,13 +135,13 @@ class TestConsumerDataHandlerEv44:
         # Check DataHandlerActor's state
         assert self.data_handler_actor_proxy.get_status().get() == 'RUNNING'
 
-        self.consumer_actor_ref.tell('START')
+        self.consumer_actor_ref.tell({'command': 'START'})
 
         assert self.consumer_actor_proxy.get_status().get() == 'RUNNING'
 
         time.sleep(0.1)
 
-        self.consumer_actor_ref.tell('STOP')
+        self.consumer_actor_ref.tell({'command': 'STOP'})
 
         # Check the first message, it should be processed by the ev44 schema
         final_data = self.data_handler_actor_proxy.data_handler_logic.get().value_data
@@ -190,7 +190,7 @@ class TestConsumerDataHandlerF144AndEv44:
             assert data_handler_actor.get_status().get() == 'RUNNING'
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('START')
+            consumer_actor.tell({'command': 'START'})
 
         for consumer_actor in self.consumer_actor_proxys:
             assert consumer_actor.get_status().get() == 'RUNNING'
@@ -198,7 +198,7 @@ class TestConsumerDataHandlerF144AndEv44:
         time.sleep(0.1)
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('STOP')
+            consumer_actor.tell({'command': 'STOP'})
 
         final_data_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().value_data
         final_times_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().time_data
@@ -259,7 +259,7 @@ class TestConsumersToInterpolator:
             assert data_handler_actor.get_status().get() == 'RUNNING'
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('START')
+            consumer_actor.tell({'command': 'START'})
 
         for consumer_actor in self.consumer_actor_proxys:
             assert consumer_actor.get_status().get() == 'RUNNING'
@@ -267,7 +267,7 @@ class TestConsumersToInterpolator:
         time.sleep(0.1)
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('STOP')
+            consumer_actor.tell({'command': 'STOP'})
 
         final_data_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().value_data
         final_times_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().time_data
@@ -350,7 +350,7 @@ class TestConsumersToFitter:
         self.fitting_actor_ref.tell({'CONF': conf})
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('START')
+            consumer_actor.tell({'command': 'START'})
 
         for consumer_actor in self.consumer_actor_proxys:
             assert consumer_actor.get_status().get() == 'RUNNING'
@@ -358,7 +358,7 @@ class TestConsumersToFitter:
         time.sleep(0.1)
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('STOP')
+            consumer_actor.tell({'command': 'STOP'})
 
         final_data_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().value_data
         final_times_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().time_data
@@ -463,7 +463,7 @@ class TestConsumersToProducers:
         self.fitting_actor_ref.tell({'CONF': conf})
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('START')
+            consumer_actor.tell({'command': 'START'})
 
         for consumer_actor in self.consumer_actor_proxys:
             assert consumer_actor.get_status().get() == 'RUNNING'
@@ -471,7 +471,7 @@ class TestConsumersToProducers:
         time.sleep(0.1)
 
         for consumer_actor in self.consumer_actor_refs:
-            consumer_actor.tell('STOP')
+            consumer_actor.tell({'command': 'STOP'})
 
         final_data_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().value_data
         final_times_ev44 = self.data_handler_actor_proxys[0].data_handler_logic.get().time_data
