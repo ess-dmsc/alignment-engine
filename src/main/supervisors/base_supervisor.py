@@ -4,11 +4,23 @@ import pykka
 
 
 class BaseSupervisorActor(pykka.ThreadingActor):
-    def __init__(self, worker_class):
+    def __init__(self, worker_class, supervisor=None, **kwargs):
         super().__init__()
         self.worker_class = worker_class
+        self.supervisor = supervisor
         self.workers = {}
         self.workers_configs = {}
+
+    def on_start(self):
+        print(f"Starting {self.__class__.__name__}")
+        if self.supervisor is None:
+            return
+        self.supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+
+    def on_failure(self, exception_type, exception_value, traceback):
+        if self.supervisor is None:
+            return
+        self.supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
 
     def on_receive(self, message):
         command = message.get('command')
