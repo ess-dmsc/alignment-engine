@@ -4,7 +4,7 @@ import pykka
 
 
 class BaseSupervisorActor(pykka.ThreadingActor):
-    def __init__(self, worker_class, supervisor=None, **kwargs):
+    def __init__(self, supervisor, worker_class, **kwargs):
         super().__init__()
         self.worker_class = worker_class
         self.supervisor = supervisor
