@@ -45,6 +45,15 @@ class TestSupervisorActorSimpleWorker:
         assert len(new_worker_statuses['worker_statuses']) == 1
         assert worker_urn not in new_worker_statuses['worker_statuses']
 
+    def test_kill(self, supervisor):
+        supervisor.tell({'command': 'SPAWN', 'config': {'actor_configs': [{}]}})
+        worker_statuses = supervisor.ask({'command': 'STATUS'})
+        assert len(worker_statuses['worker_statuses']) == 1
+        worker_urn = list(worker_statuses['worker_statuses'].keys())[0]
+        supervisor.tell({'command': 'KILL', 'actor_urn': worker_urn})
+        new_worker_statuses = supervisor.ask({'command': 'STATUS'})
+        assert len(new_worker_statuses['worker_statuses']) == 0
+
     def test_multiple_worker_registration(self, supervisor):
         supervisor.tell({'command': 'SPAWN', 'config': {'actor_configs': [{} for _ in range(5)]}})
         worker_statuses = supervisor.ask({'command': 'STATUS'})

@@ -39,6 +39,16 @@ class BaseSupervisorActor(pykka.ThreadingActor):
                 self.workers[actor.actor_urn] = actor
                 self.workers_configs[actor.actor_urn] = actor_config
 
+        elif command == 'KILL':
+            actor_urn = message.get('actor_urn', None)
+            if actor_urn is None:
+                raise ValueError("No actor_urn provided for KILL command")
+            if actor_urn not in self.workers:
+                raise ValueError(f"Actor {actor_urn} is not a worker of this supervisor")
+            self.workers[actor_urn].stop()
+            del self.workers[actor_urn]
+            del self.workers_configs[actor_urn]
+
         elif command == 'STATUS':
             statuses = {actor_urn: actor.ask({'command': 'STATUS'}) for actor_urn, actor in self.workers.items()}
             return {"status": f"{self.__class__.__name__} is alive", "worker_statuses": statuses}
