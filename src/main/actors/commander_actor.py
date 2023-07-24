@@ -1,57 +1,75 @@
 import json
+
 import pykka
 from confluent_kafka import KafkaException
 
 
-ALLOWED_COMMANDS = ['start', 'stop', 'config', 'status']
-
-
 class CommanderActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_actor, commander):
+    def __init__(self, state_machine_supervisor, commander_logic):
         super().__init__()
-        self.commander = commander
-        self.state_machine_actor = state_machine_actor
+        self.commander_logic = commander_logic
+        self.state_machine_supervisor = state_machine_supervisor
+        self.commander_logic.set_callback(self.on_data_received)
         self.status = 'IDLE'
 
-    def on_receive(self, message):
-        if message == 'START':
-            self.commander.consume_messages()
-            self.status = 'RUNNING'
-        elif message == 'STOP':
-            self.stop()
-        elif 'command' in message:
-            if message['command'] in ALLOWED_COMMANDS:
-                self.state_machine_actor.on_receive(message)
-
     def on_start(self):
-        self.actor_ref.proxy().fetch_commands()
-
-    def fetch_commands(self):
-        self.commander.consume_messages()
+        print(f"Starting {self.__class__.__name__}")
+        self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
         self.status = 'RUNNING'
 
-    def on_command_received(self, command):
-        self.actor_ref.tell({'command': command})
+    def on_failure(self, exception_type, exception_value, traceback):
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+
+    def on_receive(self, message):
+        if not isinstance(message, dict):
+            print(f"Unknown message: {message}")
+            return
+
+        command = message.get('command', None)
+
+        if command is not None:
+            if command == 'START':
+                self.status = 'RUNNING'
+                self.actor_ref.tell({'command': 'CONSUME'})
+            elif command == 'STOP':
+                self.stop()
+            elif command == 'CONSUME':
+                self.commander_logic.consume_message()
+            elif command == 'STATUS':
+                return self.get_status()
+            return
+
+        data = message.get('data', None)
+        if data is not None:
+            self.state_machine_supervisor.tell(message)
+            return
+        else:
+            print(f"Unknown message: {message}")
+
+    def on_data_received(self, data):
+        self.actor_ref.tell(data)
 
     def get_status(self):
         return self.status
 
     def stop(self):
-        self.commander.stop()
+        self.commander_logic.stop()
         super().stop()
 
 
 class CommanderLogic:
-    def __init__(self, consumer, on_command_received):
+    def __init__(self, consumer, callback=None, source_name=None):
         self.consumer = consumer
-        self.on_command_received = on_command_received
+        self.callback = callback
         self.running = True
+        self.source_name = source_name
 
-    def consume_messages(self):
-        while self.running:
-            msg = self._poll_message()
-            if msg is not None:
-                self._process_message(msg)
+    def consume_message(self):
+        msg = self._poll_message()
+        if msg is not None:
+            self._process_message(msg)
+        if self.running:
+            self.callback({'command': 'CONSUME'})
 
     def _poll_message(self):
         try:
@@ -76,25 +94,13 @@ class CommanderLogic:
         try:
             decoded_message = value.decode('utf-8')
             command_message = json.loads(decoded_message)
-            self.on_command_received(command_message)
+            self.callback({'data': decoded_message})
         except UnicodeDecodeError:
-            print("Cannot decode message")
+            print("Cannot deserialise message")
+
+    def set_callback(self, callback):
+        self.callback = callback
 
     def stop(self):
         self.running = False
         self.consumer.close()
-
-
-
-
-
-
-# try:
-#     self.consumer = Consumer({'bootstrap.servers': self.broker,
-#                               'group.id': 'command_group',
-#                               'auto.offset.reset': 'latest'})
-#
-#     self.consumer.subscribe([self.command_topic])
-# except KafkaException as e:
-#     print(f"Kafka error: {e}")
-#     return
