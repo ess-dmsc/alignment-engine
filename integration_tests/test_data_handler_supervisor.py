@@ -63,7 +63,7 @@ class TestSupervisorActorAdvancedWorker:
         for interpolator_actor_mock in self.interpolator_actor_mocks:
             interpolator_actor_mock.tell.assert_called_once()
 
-    def test_advanced_workers_killed_during_consumption(self, supervisor):
+    def test_advanced_workers_killed(self, supervisor):
         supervisor.tell({'command': 'SPAWN', 'config': {'actor_configs': [
             {
                 'interpolator_actor': self.interpolator_actor_mocks[0],
@@ -106,7 +106,7 @@ class TestSupervisorActorAdvancedWorker:
         assert self.interpolator_actor_mocks[0].tell.call_count == 1
         assert self.interpolator_actor_mocks[1].tell.call_count == 2
 
-    def test_worker_exception_during_consumption(self, supervisor):
+    def test_worker_exception_does_restart(self, supervisor):
         # Mock `consume_message` with our side effect
         with patch.object(self.data_handler_logics[0], 'start', side_effect=Exception('Test exception')):
             # Spawn workers

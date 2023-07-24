@@ -38,6 +38,7 @@ class ProducerActor(pykka.ThreadingActor):
                 pass
             elif command == 'STATUS':
                 return self.get_status()
+            return
 
         data = message.get('data', None)
         if data is not None:
