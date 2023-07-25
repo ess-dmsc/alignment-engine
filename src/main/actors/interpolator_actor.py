@@ -4,17 +4,28 @@ from scipy.interpolate import interp1d
 
 
 class InterpolatorActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_supervisor, fitting_actor, producer_actor, interpolator_logic):
+    def __init__(self, state_machine_supervisor, fitter_actor=None, producer_actor=None, interpolator_logic=None):
         super().__init__()
         self.state_machine_supervisor = state_machine_supervisor
-        self.fitting_actor = fitting_actor
+        self.fitter_actor = fitter_actor
         self.producer_actor = producer_actor
         self.interpolator_logic = interpolator_logic
         self.status = 'IDLE'
 
+    def set_fitter_actor(self, fitter_actor):
+        self.fitter_actor = fitter_actor
+
+    def set_producer_actor(self, producer_actor):
+        self.producer_actor = producer_actor
+
+    def set_interpolator_logic(self, interpolator_logic):
+        self.interpolator_logic = interpolator_logic
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
+        if self.interpolator_logic is not None:
+            self.interpolator_logic.start()
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
@@ -29,28 +40,39 @@ class InterpolatorActor(pykka.ThreadingActor):
 
         if command is not None:
             if command == 'START':
-                self.status = 'RUNNING'
-                self.interpolator_logic.start()
+                if self.interpolator_logic is not None:
+                    self.interpolator_logic.start()
                 self.on_start()
             elif command == 'STOP':
+                if self.interpolator_logic is not None:
+                    self.interpolator_logic.stop()
                 self.status = 'IDLE'
-                self.interpolator_logic.stop()
             elif command == 'RESET':
-                self.interpolator_logic.reset()
+                if self.interpolator_logic is not None:
+                    self.interpolator_logic.reset()
             elif command == 'STATUS':
                 return self.get_status()
+            elif command == 'SET_LOGIC':
+                self.set_interpolator_logic(message.get('logic', None))
+            elif command == 'SET_PRODUCER_ACTOR':
+                self.set_producer_actor(message.get('producer_actor', None))
+            elif command == 'SET_FITTER_ACTOR':
+                self.set_fitter_actor(message.get('fitter_actor', None))
 
         data = message.get('data', None)
         if data is not None:
             try:
-                self.interpolator_logic.process_data(message)
+                if self.interpolator_logic is not None:
+                    self.interpolator_logic.process_data(message)
             except Exception as e:
                 print(f"Interpolator error: {e}")
             try:
                 result = self.get_results()
                 if result:
-                    self.fitting_actor.tell({'data': result})
-                    self.producer_actor.tell({'data': result})
+                    if self.fitter_actor is not None:
+                        self.fitter_actor.tell({'data': result})
+                    if self.producer_actor is not None:
+                        self.producer_actor.tell({'data': result})
             except Exception as e:
                 print(f"Error getting and sending results from Interpolator: {e}")
         else:
@@ -60,10 +82,12 @@ class InterpolatorActor(pykka.ThreadingActor):
         return self.status
 
     def get_results(self):
-        return self.interpolator_logic.get_results()
+        if self.interpolator_logic is not None:
+            return self.interpolator_logic.get_results()
 
     def stop(self):
-        self.interpolator_logic.stop()
+        if self.interpolator_logic is not None:
+            self.interpolator_logic.stop()
 
 
 class InterpolatorLogic:

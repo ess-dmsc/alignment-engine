@@ -9,12 +9,18 @@ KNOWN_FIT_FUNCTIONS = ['gauss']
 
 
 class FitterActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_supervisor, producer_actor, fitter_logic):
+    def __init__(self, state_machine_supervisor, producer_actor=None, fitter_logic=None):
         super().__init__()
         self.state_machine_supervisor = state_machine_supervisor
         self.producer_actor = producer_actor
         self.fitter_logic = fitter_logic
         self.status = 'IDLE'
+
+    def set_producer_actor(self, producer_actor):
+        self.producer_actor = producer_actor
+
+    def set_fitter_logic(self, fitter_logic):
+        self.fitter_logic = fitter_logic
 
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
@@ -34,29 +40,38 @@ class FitterActor(pykka.ThreadingActor):
         if command is not None:
             if command == 'START':
                 self.status = 'RUNNING'
-                self.fitter_logic.start()
+                if self.fitter_logic:
+                    self.fitter_logic.start()
                 self.on_start()
             elif command == 'STOP':
                 self.status = 'IDLE'
-                self.fitter_logic.stop()
+                if self.fitter_logic:
+                    self.fitter_logic.stop()
             elif command == 'RESET':
-                self.fitter_logic.reset()
+                if self.fitter_logic:
+                    self.fitter_logic.reset()
             elif command == 'STATUS':
                 return self.get_status()
-
-        conf = message.get('CONF', None)
-        if conf is not None:
-            self.fitter_logic.set_conf(message['CONF'])
+            elif command == 'SET_LOGIC':
+                self.set_fitter_logic(message.get('logic', None))
+            elif command == 'SET_PRODUCER_ACTOR':
+                self.set_producer_actor(message.get('producer_actor', None))
+            elif command == 'CONFIG':
+                conf = message.get('config', None)
+                if conf is not None and self.fitter_logic:
+                    self.fitter_logic.set_conf(message['config'])
+            return
 
         data = message.get('data', None)
         if data is not None:
             try:
-                self.fitter_logic.fit_data(message)
+                if self.fitter_logic:
+                    self.fitter_logic.fit_data(message)
             except Exception as e:
                 print(f"Fitter error: {e}")
             try:
                 result = self.get_results()
-                if result:
+                if result and self.producer_actor:
                     self.producer_actor.tell({'data': result})
             except Exception as e:
                 print(f"Error getting and sending results from Fitter: {e}")
@@ -67,7 +82,8 @@ class FitterActor(pykka.ThreadingActor):
         return self.status
 
     def get_results(self):
-        return self.fitter_logic.get_results()
+        if self.fitter_logic:
+            return self.fitter_logic.get_results()
 
     def stop(self):
         pass

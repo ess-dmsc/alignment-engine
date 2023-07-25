@@ -10,7 +10,7 @@ class BaseSupervisorActor(pykka.ThreadingActor):
         self.workers_configs = {}
 
     def on_start(self):
-        print(f"Starting {self.__class__.__name__}")
+        # print(f"Starting {self.__class__.__name__}")
         if self.supervisor is None:
             return
         self.supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
@@ -32,10 +32,10 @@ class BaseSupervisorActor(pykka.ThreadingActor):
             if actor.actor_urn not in self.workers:
                 print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Not this supervisor's worker")
                 return
-            print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Restarting...")
+            # print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Restarting...")
             actor_config = self.workers_configs[actor.actor_urn]
             new_actor = self.worker_class.start(self.actor_ref, **actor_config)
-            print(f"New {new_actor.__class__.__name__} {new_actor.actor_urn} has been started")
+            # print(f"New {new_actor.__class__.__name__} {new_actor.actor_urn} has been started")
             del self.workers[actor.actor_urn]
             self.workers[new_actor.actor_urn] = new_actor
 
@@ -61,5 +61,7 @@ class BaseSupervisorActor(pykka.ThreadingActor):
 
         elif command == 'STATUS':
             statuses = {actor_urn: actor.ask({'command': 'STATUS'}) for actor_urn, actor in self.workers.items()}
-            return {"status": f"{self.__class__.__name__} is alive", "worker_statuses": statuses}
+            status_dict = {"status": f"{self.__class__.__name__} is alive", "worker_statuses": statuses}
+            print(status_dict)
+            return status_dict
 

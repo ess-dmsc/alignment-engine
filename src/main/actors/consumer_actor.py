@@ -11,13 +11,22 @@ deserialiser_by_schema = {
 
 
 class ConsumerActor(pykka.ThreadingActor):
-    def __init__(self, consumer_supervisor, data_handler_actor, consumer_logic):
+    def __init__(self, consumer_supervisor, data_handler_actor=None, consumer_logic=None):
         super().__init__()
         self.consumer_logic = consumer_logic
         self.consumer_supervisor = consumer_supervisor
         self.data_handler_actor = data_handler_actor
-        self.consumer_logic.set_callback(self.on_data_received)
+        if self.consumer_logic is not None:
+            self.consumer_logic.set_callback(self.on_data_received)
         self.status = 'IDLE'
+
+    def set_consumer_logic(self, consumer_logic):
+        self.consumer_logic = consumer_logic
+        if self.consumer_logic is not None:
+            self.consumer_logic.set_callback(self.on_data_received)
+
+    def set_data_handler_actor(self, data_handler_actor):
+        self.data_handler_actor = data_handler_actor
 
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
@@ -37,18 +46,25 @@ class ConsumerActor(pykka.ThreadingActor):
         if command is not None:
             if command == 'START':
                 self.status = 'RUNNING'
-                self.actor_ref.tell({'command': 'CONSUME'})
+                if self.consumer_logic is not None:
+                    self.actor_ref.tell({'command': 'CONSUME'})
             elif command == 'STOP':
                 self.stop()
             elif command == 'CONSUME':
-                self.consumer_logic.consume_message()
+                if self.consumer_logic is not None:
+                    self.consumer_logic.consume_message()
             elif command == 'STATUS':
                 return self.get_status()
+            elif command == 'SET_LOGIC':
+                self.set_consumer_logic(message.get('logic', None))
+            elif command == 'SET_DATA_HANDLER_ACTOR':
+                self.set_data_handler_actor(message.get('data_handler_actor', None))
             return
 
         data = message.get('data', None)
         if data is not None:
-            self.data_handler_actor.tell(message)
+            if self.data_handler_actor is not None:
+                self.data_handler_actor.tell(message)
             return
         else:
             print(f"Unknown message: {message}")
@@ -60,7 +76,8 @@ class ConsumerActor(pykka.ThreadingActor):
         return self.status
 
     def stop(self):
-        self.consumer_logic.stop()
+        if self.consumer_logic is not None:
+            self.consumer_logic.stop()
         super().stop()
 
 
@@ -114,6 +131,7 @@ class ConsumerLogic:
             if self.source_name is not None:
                 if decoded_message.source_name != self.source_name:
                     return
+
             self.callback({'data': decoded_message})
         except UnicodeDecodeError:
             print("Cannot deserialise message")

@@ -3,17 +3,28 @@ import pykka
 
 
 class DataHandlerActor(pykka.ThreadingActor):
-    def __init__(self, data_handler_supervisor, interpolator_actor, data_handler_logic):
+    def __init__(self, data_handler_supervisor, interpolator_actor=None, data_handler_logic=None):
         super().__init__()
         self.data_handler_supervisor = data_handler_supervisor
         self.interpolator_actor = interpolator_actor
         self.data_handler_logic = data_handler_logic
+        if self.data_handler_logic is not None:
+            self.data_handler_logic.active = True
         self.status = 'IDLE'
+
+    def set_interpolator_actor(self, interpolator_actor):
+        self.interpolator_actor = interpolator_actor
+
+    def set_data_handler_logic(self, data_handler_logic):
+        self.data_handler_logic = data_handler_logic
+        if self.data_handler_logic is not None:
+            self.data_handler_logic.active = True
 
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.data_handler_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
-        self.data_handler_logic.active = True
+        if self.data_handler_logic is not None:
+            self.data_handler_logic.start()
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
@@ -28,19 +39,25 @@ class DataHandlerActor(pykka.ThreadingActor):
 
         if command is not None:
             if command == 'START':
-                self.data_handler_logic.active = True
-                self.data_handler_logic.start()
+                if self.data_handler_logic is not None:
+                    self.data_handler_logic.start()
             elif command == 'STOP':
                 self.stop()
             elif command == 'RESET':
-                self.data_handler_logic.reset()
+                if self.data_handler_logic is not None:
+                    self.data_handler_logic.reset()
             elif command == 'STATUS':
                 return self.get_status()
+            elif command == 'SET_LOGIC':
+                self.set_data_handler_logic(message.get('logic', None))
+            elif command == 'SET_INTERPOLATOR_ACTOR':
+                self.set_interpolator_actor(message.get('interpolator_actor', None))
 
         data = message.get('data', None)
         if data is not None:
             try:
-                self.data_handler_logic.on_data_received(message)
+                if self.data_handler_logic is not None:
+                    self.data_handler_logic.on_data_received(message)
                 self.send_to_interpolator()
             except Exception as e:
                 print(f"Data handler error: {e}")
@@ -51,18 +68,20 @@ class DataHandlerActor(pykka.ThreadingActor):
         return self.status
 
     def stop(self):
-        self.data_handler_logic.stop()
+        if self.data_handler_logic is not None:
+            self.data_handler_logic.stop()
         super().stop()
 
     def send_to_interpolator(self):
-        data = {
-            'sender': self.actor_urn,  # Assuming actor_urn as sender's unique identifier
-            'data': {
-                'value': self.data_handler_logic.value_data,
-                'time': self.data_handler_logic.time_data,
+        if self.interpolator_actor is not None:
+            data = {
+                'sender': self.actor_urn,  # Assuming actor_urn as sender's unique identifier
+                'data': {
+                    'value': self.data_handler_logic.value_data,
+                    'time': self.data_handler_logic.time_data,
+                }
             }
-        }
-        self.interpolator_actor.tell(data)
+            self.interpolator_actor.tell(data)
 
 
 class DataHandlerLogic:

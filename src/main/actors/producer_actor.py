@@ -8,11 +8,14 @@ from streaming_data_types import serialise_f144, serialise_x5f2
 
 
 class ProducerActor(pykka.ThreadingActor):
-    def __init__(self, producer_supervisor, producer_logic):
+    def __init__(self, producer_supervisor, producer_logic=None):
         super().__init__()
         self.producer_logic = producer_logic
         self.producer_supervisor = producer_supervisor
         self.status = 'IDLE'
+
+    def set_producer_logic(self, producer_logic):
+        self.producer_logic = producer_logic
 
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
@@ -38,11 +41,14 @@ class ProducerActor(pykka.ThreadingActor):
                 pass
             elif command == 'STATUS':
                 return self.get_status()
+            elif command == 'SET_LOGIC':
+                self.set_producer_logic(message.get('logic', None))
             return
 
         data = message.get('data', None)
         if data is not None:
-            self.producer_logic.produce_message(message)
+            if self.producer_logic is not None:
+                self.producer_logic.produce_message(message)
         else:
             print(f"Unknown message: {message}")
 
@@ -53,7 +59,8 @@ class ProducerActor(pykka.ThreadingActor):
         return self.status
 
     def stop(self):
-        self.producer_logic.stop()
+        if self.producer_logic is not None:
+            self.producer_logic.stop()
         super().stop()
 
 

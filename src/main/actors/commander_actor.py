@@ -5,12 +5,18 @@ from confluent_kafka import KafkaException
 
 
 class CommanderActor(pykka.ThreadingActor):
-    def __init__(self, state_machine_supervisor, commander_logic):
+    def __init__(self, state_machine_supervisor, commander_logic=None):
         super().__init__()
         self.commander_logic = commander_logic
         self.state_machine_supervisor = state_machine_supervisor
-        self.commander_logic.set_callback(self.on_data_received)
+        if self.commander_logic is not None:
+            self.commander_logic.set_callback(self.on_data_received)
         self.status = 'IDLE'
+
+    def set_commander_logic(self, commander_logic):
+        self.commander_logic = commander_logic
+        if self.commander_logic is not None:
+            self.commander_logic.set_callback(self.on_data_received)
 
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
@@ -18,6 +24,7 @@ class CommanderActor(pykka.ThreadingActor):
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
+        print(f"Commander actor failed: {exception_type}, {exception_value}, {traceback}")
         self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
 
     def on_receive(self, message):
@@ -34,9 +41,12 @@ class CommanderActor(pykka.ThreadingActor):
             elif command == 'STOP':
                 self.stop()
             elif command == 'CONSUME':
-                self.commander_logic.consume_message()
+                if self.commander_logic is not None:
+                    self.commander_logic.consume_message()
             elif command == 'STATUS':
                 return self.get_status()
+            elif command == 'SET_LOGIC':
+                self.set_commander_logic(message.get('logic', None))
             return
 
         data = message.get('data', None)
@@ -53,8 +63,9 @@ class CommanderActor(pykka.ThreadingActor):
         return self.status
 
     def stop(self):
-        self.commander_logic.stop()
-        super().stop()
+        if self.commander_logic is not None:
+            self.commander_logic.stop()
+        # super().stop()
 
 
 class CommanderLogic:
@@ -94,7 +105,7 @@ class CommanderLogic:
         try:
             decoded_message = value.decode('utf-8')
             command_message = json.loads(decoded_message)
-            self.callback({'data': decoded_message})
+            self.callback({'data': command_message})
         except UnicodeDecodeError:
             print("Cannot deserialise message")
 

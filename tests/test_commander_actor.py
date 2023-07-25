@@ -77,8 +77,8 @@ def test_fetch_command():
     for i in range(2):
         commander_logic.consume_message()
 
-    assert json.loads(received_data[0]['data']) == {"command": "START"}
-    assert json.loads(received_data[1]['data']) == {"command": "STOP"}
+    assert received_data[0]['data'] == {"command": "START"}
+    assert received_data[1]['data'] == {"command": "STOP"}
 
 
 def test_can_send_config_command():
@@ -100,7 +100,7 @@ def test_can_send_config_command():
 
     commander_logic.consume_message()
 
-    assert json.loads(received_data[0]['data']) == {"command": "config", "config": CONFIG}
+    assert received_data[0]['data'] == {"command": "config", "config": CONFIG}
 
 
 def test_fetch_commands_with_kafka_exception():
