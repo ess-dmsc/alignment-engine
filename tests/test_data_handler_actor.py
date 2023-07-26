@@ -190,7 +190,7 @@ class TestDataHandlerActorSendToInterpolator:
     def data_handler_setup(self):
         self.data_handler_supervisor_mock = MagicMock()
         self.data_handler_logic_mock = MagicMock(spec=DataHandlerLogic)
-        self.data_handler_logic_mock.configure_mock(value_data=[], time_data=[])
+        self.data_handler_logic_mock.configure_mock(value_data=[], time_data=[], source_name='ev44_source_1')
         self.interpolator_actor_mock = MagicMock(spec=InterpolatorActor)
         self.interpolator_actor_mock.tell = MagicMock()
         self.actor_ref = DataHandlerActor.start(
@@ -207,7 +207,7 @@ class TestDataHandlerActorSendToInterpolator:
         self.actor_proxy.on_receive({'data': fake_data}).get()
 
         expected_data = {
-            'sender': self.actor_ref.actor_urn,
+            'sender': 'ev44_source_1',
             'data': {
                 'value': self.data_handler_logic_mock.value_data,
                 'time': self.data_handler_logic_mock.time_data,
@@ -359,6 +359,7 @@ def test_faulty_f144_data(data_handler):
         def __init__(self):
             self.value = None
             self.timestamp_unix_ns = None
+            self.source_name = None
 
     faulty_f144 = FaultyF144()
     data_handler.on_data_received({'data': faulty_f144})

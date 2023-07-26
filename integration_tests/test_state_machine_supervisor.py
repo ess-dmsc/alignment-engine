@@ -342,6 +342,8 @@ class TestStateMachineSupervisorActor:
         for consumer_actor in consumer_actors:
             consumer_actor.tell({'command': 'STOP'})
 
+        time.sleep(0.5)
+
         producer_spy_fitt = supervisor.proxy().producers.get()[0]
         producer_spy_inte = supervisor.proxy().producers.get()[1]
 
