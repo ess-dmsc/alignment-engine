@@ -9,11 +9,9 @@ from src.main.actors.fitter_actor import FitterLogic
 from src.main.actors.interpolator_actor import InterpolatorLogic
 from src.main.actors.producer_actor import ProducerActor, ProducerLogic
 
-from integration_tests.kafka_globals.kafka_globals import TEST_CONSUMERS, TEST_PRODUCERS
-
 
 class StateMachineSupervisorActor(pykka.ThreadingActor):
-    def __init__(self, supervisor, worker_classes, is_test=False):
+    def __init__(self, supervisor, worker_classes, consumer_factory, producer_factory):
         super().__init__()
         self.worker_classes = {
             worker_class.__name__: worker_class for worker_class in worker_classes
@@ -23,9 +21,10 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         self.workers_configs = {}
         self.workers_by_type = {}
 
-        if is_test:
-            self.consumers = TEST_CONSUMERS
-            self.producers = TEST_PRODUCERS
+        self.consumer_factory = consumer_factory
+        self.producer_factory = producer_factory
+
+        self.producers = [self.producer_factory.create_producer(broker='localhost:9092', topic='output_topic') for _ in range(3)]
 
     def on_start(self):
         # print(f"Starting {self.__class__.__name__}")
@@ -165,7 +164,8 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         consumer_actor_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
         consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_actor_urns]
         source_names = [d['source'] for d in config['stream_configs'].values()]
-        consumers = self.consumers
+        topic_names = [d['topic'] for d in config['stream_configs'].values()]
+        consumers = [self.consumer_factory.create_consumer(broker='localhost:9092', topic=topic_names[i], source=source_names[i]) for i in range(len(consumer_actors))]
         consumer_logics = [ConsumerLogic(consumers[i], source_name=source_names[i]) for i in range(len(consumer_actors))]
         for consumer_actor, consumer_logic in zip(consumer_actors, consumer_logics):
             consumer_actor.tell({'command': 'SET_LOGIC', 'logic': consumer_logic})

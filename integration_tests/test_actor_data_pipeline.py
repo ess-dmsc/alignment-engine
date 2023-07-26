@@ -40,7 +40,9 @@ def generate_simple_fake_f144_data(num_messages, source_name="f144_source_1"):
 
 def generate_gauss_f144_data(num_messages, source_name="f144_source_1"):
     assert num_messages % 2 == 1, "num_messages must be odd"
-    vals = np.linspace(0, 10, num_messages).tolist()
+    vals = np.linspace(0, 10, num_messages)
+    vals += np.random.normal(0, 0.01, num_messages)
+    vals = vals.tolist()
     times = np.linspace(0, 1000, num_messages).astype(np.int64).tolist()
     data = []
     for val, t in zip(vals, times):
@@ -52,7 +54,9 @@ def generate_gauss_f144_data(num_messages, source_name="f144_source_1"):
 
 def generate_gauss_ev44_events(num_messages, source_name="ev44_source_1"):
     assert num_messages % 2 == 1, "num_messages must be odd"
-    vals = gauss_func(np.linspace(0, 10, num_messages), 0, 100, 5, 1).astype(np.int64).tolist()
+    vals = gauss_func(np.linspace(0, 10, num_messages), 0, 100, 5, 1)
+    vals += np.abs(np.random.normal(0, 5, num_messages))
+    vals = vals.astype(np.int64).tolist()
     times = np.linspace(0, 1000, num_messages).astype(np.int64).tolist()
     events = []
     for val, t in zip(vals, times):

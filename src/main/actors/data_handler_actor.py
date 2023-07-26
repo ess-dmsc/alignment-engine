@@ -52,13 +52,14 @@ class DataHandlerActor(pykka.ThreadingActor):
                 self.set_data_handler_logic(message.get('logic', None))
             elif command == 'SET_INTERPOLATOR_ACTOR':
                 self.set_interpolator_actor(message.get('interpolator_actor', None))
+            return
 
         data = message.get('data', None)
         if data is not None:
             try:
                 if self.data_handler_logic is not None:
                     self.data_handler_logic.on_data_received(message)
-                self.send_to_interpolator()
+                    self.send_to_interpolator()
             except Exception as e:
                 print(f"Data handler error: {e}")
         else:
@@ -75,7 +76,7 @@ class DataHandlerActor(pykka.ThreadingActor):
     def send_to_interpolator(self):
         if self.interpolator_actor is not None:
             data = {
-                'sender': self.actor_urn,  # Assuming actor_urn as sender's unique identifier
+                'sender': self.data_handler_logic.source_name,  # Assuming actor_urn as sender's unique identifier
                 'data': {
                     'value': self.data_handler_logic.value_data,
                     'time': self.data_handler_logic.time_data,
@@ -89,6 +90,7 @@ class DataHandlerLogic:
         self.active = True
         self.value_data = []
         self.time_data = []
+        self.source_name = None
 
     def on_data_received(self, message):
         if not self.active:
@@ -100,7 +102,7 @@ class DataHandlerLogic:
             return
 
         value_data, time_data = self.process_data(data, data_type)
-        if value_data is not None and time_data is not None:
+        if None not in (value_data, time_data, self.source_name):
             self.value_data.append(value_data)
             self.time_data.append(time_data)
 
@@ -120,6 +122,7 @@ class DataHandlerLogic:
             if value_data == 0:
                 return 0, data.reference_time[0]
             time_data = data.reference_time[0] + np.min(data.time_of_flight)
+            self.source_name = data.source_name
         except TypeError:
             return None, None
 
@@ -129,6 +132,7 @@ class DataHandlerLogic:
         try:
             value_data = data.value
             time_data = data.timestamp_unix_ns
+            self.source_name = data.source_name
         except TypeError:
             return None, None
 

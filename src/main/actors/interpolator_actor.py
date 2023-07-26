@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pykka
 from scipy.interpolate import interp1d
@@ -58,6 +60,7 @@ class InterpolatorActor(pykka.ThreadingActor):
                 self.set_producer_actor(message.get('producer_actor', None))
             elif command == 'SET_FITTER_ACTOR':
                 self.set_fitter_actor(message.get('fitter_actor', None))
+            return
 
         data = message.get('data', None)
         if data is not None:
@@ -104,6 +107,10 @@ class InterpolatorLogic:
             raise ValueError("Message must have a sender")
 
         sender = message['sender']
+
+        if sender is None:
+            return
+
         if sender not in self.raw_data:
             self.raw_data[sender] = {'value': [], 'time': []}
 

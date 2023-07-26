@@ -1,8 +1,10 @@
 import json
 import time
 
+import numpy as np
 import pytest
 import pykka
+from streaming_data_types import deserialise_f144
 
 from src.main.actors.consumer_actor import ConsumerActor
 from src.main.actors.data_handler_actor import DataHandlerActor
@@ -16,8 +18,6 @@ from src.main.actors.fitter_actor import FitterActor, FitterLogic
 from src.main.actors.commander_actor import CommanderActor, CommanderLogic
 from tests.doubles.consumer import ConsumerStub
 from tests.doubles.producer import ProducerSpy
-
-from integration_tests.kafka_globals.kafka_globals import TEST_CONSUMERS, TEST_PRODUCERS
 
 from integration_tests.test_actor_data_pipeline import generate_gauss_f144_data, generate_gauss_ev44_events
 
@@ -38,12 +38,33 @@ CONFIG = {
         },
     },
     'fitter_config': {
-        'control_signals': ['sender1'],
-        'readout_signals': ['sender2'],
+        'control_signals': ['f144_source_1'],
+        'readout_signals': ['ev44_source_1'],
         'fit_function': 'gauss',
     }
 }
 
+
+class ConsumerFactoryStub:
+    def __init__(self):
+        self.consumers = [ConsumerStub({}), ConsumerStub({})]
+        f144_data = generate_gauss_f144_data(101)
+        ev44_data = generate_gauss_ev44_events(201)
+        for i, data in enumerate(f144_data):
+            self.consumers[0].add_message('topic', 0, i + 1, None, data)
+        for i, data in enumerate(ev44_data):
+            self.consumers[1].add_message('topic', 0, i + 1, None, data)
+
+    def create_consumer(self, broker, topic, source):
+        return self.consumers.pop(0)
+
+
+class ProducerFactoryStub:
+    def __init__(self):
+        self.producers = [ProducerSpy({}), ProducerSpy({}), ProducerSpy({})]
+
+    def create_producer(self, broker, topic):
+        return self.producers.pop(0)
 
 
 class TestStateMachineSupervisorActor:
@@ -59,7 +80,8 @@ class TestStateMachineSupervisorActor:
                 FitterActor,
                 CommanderActor,
             ],
-            is_test=True
+            ConsumerFactoryStub(),
+            ProducerFactoryStub(),
         )
 
         self.commander_consumer = ConsumerStub({})
@@ -285,13 +307,6 @@ class TestStateMachineSupervisorActor:
         assert all(consumer_datahandler_readbacks)
 
     def test_spawn_all_workers_and_run_data_through_pipeline(self, supervisor):
-        f144_data = generate_gauss_f144_data(101)
-        ev44_data = generate_gauss_ev44_events(201)
-        for i, data in enumerate(f144_data):
-            TEST_CONSUMERS[0].add_message('topic', 0, i + 1, None, data)
-        for i, data in enumerate(ev44_data):
-            TEST_CONSUMERS[1].add_message('topic', 0, i + 1, None, data)
-
         commander_logic = CommanderLogic(self.commander_consumer)
         commander_actor = supervisor.proxy().workers_by_type.get()['CommanderActor']
         commander_actor.ask({'command': 'SET_LOGIC', 'logic': commander_logic})
@@ -327,6 +342,25 @@ class TestStateMachineSupervisorActor:
         for consumer_actor in consumer_actors:
             consumer_actor.tell({'command': 'STOP'})
 
-        print(TEST_PRODUCERS[0].data)
+        producer_spy_fitt = supervisor.proxy().producers.get()[0]
+        producer_spy_inte = supervisor.proxy().producers.get()[1]
 
-        assert False
+        received_data_from_fitter_producer = deserialise_f144(producer_spy_fitt.data[-1]['value'])
+        received_data_from_interpolator_producer = [deserialise_f144(dat['value']) for dat in producer_spy_inte.data]
+
+        reduced_interpolator_data = {}
+        for dat in received_data_from_interpolator_producer:
+            reduced_interpolator_data[dat.source_name] = dat.value
+
+        computed_fit_params = received_data_from_fitter_producer.value
+        optima = computed_fit_params[2]
+        ev44_source_1_data = reduced_interpolator_data['ev44_source_1']
+        f144_source_1_data = reduced_interpolator_data['f144_source_1']
+
+        # import matplotlib.pyplot as plt
+        # plt.plot(f144_source_1_data, ev44_source_1_data, 'g', label='data')
+        # plt.vlines(optima, 80, 120, label='optima', linewidth=3)
+        # plt.show()
+
+        assert np.allclose(optima, 5., atol=0.1)
+        assert len(ev44_source_1_data) == len(f144_source_1_data)
