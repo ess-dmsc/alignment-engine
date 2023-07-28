@@ -18,6 +18,12 @@ class CommanderActor(pykka.ThreadingActor):
         if self.commander_logic is not None:
             self.commander_logic.set_callback(self.on_data_received)
 
+    def get_config(self):
+        config = {
+            'commander_logic': self.commander_logic,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
@@ -25,7 +31,7 @@ class CommanderActor(pykka.ThreadingActor):
 
     def on_failure(self, exception_type, exception_value, traceback):
         print(f"Commander actor failed: {exception_type}, {exception_value}, {traceback}")
-        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):

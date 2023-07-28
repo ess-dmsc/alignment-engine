@@ -3,7 +3,6 @@ from confluent_kafka import KafkaException
 
 from streaming_data_types import deserialise_ev44, deserialise_f144
 
-
 deserialiser_by_schema = {
     'ev44': deserialise_ev44,
     'f144': deserialise_f144,
@@ -28,13 +27,20 @@ class ConsumerActor(pykka.ThreadingActor):
     def set_data_handler_actor(self, data_handler_actor):
         self.data_handler_actor = data_handler_actor
 
+    def get_config(self):
+        config = {
+            'consumer_logic': self.consumer_logic,
+            'data_handler_actor': self.data_handler_actor,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.consumer_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
-        self.consumer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.consumer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):
@@ -59,6 +65,8 @@ class ConsumerActor(pykka.ThreadingActor):
                 self.set_consumer_logic(message.get('logic', None))
             elif command == 'SET_DATA_HANDLER_ACTOR':
                 self.set_data_handler_actor(message.get('data_handler_actor', None))
+                # if self.consumer_logic is not None:
+                    # self.actor_ref.tell({'command': 'START'})
             return
 
         data = message.get('data', None)

@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pykka
 
@@ -20,6 +22,13 @@ class DataHandlerActor(pykka.ThreadingActor):
         if self.data_handler_logic is not None:
             self.data_handler_logic.active = True
 
+    def get_config(self):
+        config = {
+            'data_handler_logic': self.data_handler_logic,
+            'interpolator_actor': self.interpolator_actor,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.data_handler_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
@@ -28,7 +37,7 @@ class DataHandlerActor(pykka.ThreadingActor):
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
-        self.data_handler_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.data_handler_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):

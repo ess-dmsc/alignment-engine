@@ -1,3 +1,4 @@
+import time
 
 
 class Message:
@@ -19,6 +20,20 @@ class Message:
         return self._error
 
 
+class ExceptionMessage(Message):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def value(self):
+        raise Exception("Value method called on ExceptionMessage")
+
+    def offset(self):
+        raise Exception("Offset method called on ExceptionMessage")
+
+    def error(self):
+        raise Exception("Error method called on ExceptionMessage")
+
+
 class ConsumerStub:
     def __init__(self, config):
         self.config = config
@@ -35,6 +50,9 @@ class ConsumerStub:
 
     def add_message(self, topic, partition, offset, key, value, error=None):
         self.messages.append(Message(topic, partition, offset, key, value, error))
+
+    def add_exception_message(self, topic, partition, offset, key, value, error=None):
+        self.messages.append(ExceptionMessage(topic, partition, offset, key, value, error))
 
     def subscribe(self, topics):
         pass  # Stub, do nothing

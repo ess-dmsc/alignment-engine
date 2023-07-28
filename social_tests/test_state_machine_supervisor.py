@@ -1,9 +1,11 @@
 import json
 import time
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 import pykka
+from pytest_mock import mocker
 from streaming_data_types import deserialise_f144
 
 from src.main.actors.consumer_actor import ConsumerActor
@@ -19,7 +21,7 @@ from src.main.actors.commander_actor import CommanderActor, CommanderLogic
 from tests.doubles.consumer import ConsumerStub
 from tests.doubles.producer import ProducerSpy
 
-from integration_tests.test_actor_data_pipeline import generate_gauss_f144_data, generate_gauss_ev44_events
+from social_tests.test_actor_data_pipeline import generate_gauss_f144_data, generate_gauss_ev44_events
 
 
 CONFIG = {
@@ -48,14 +50,38 @@ CONFIG = {
 class ConsumerFactoryStub:
     def __init__(self):
         self.consumers = [ConsumerStub({}), ConsumerStub({})]
-        f144_data = generate_gauss_f144_data(101)
-        ev44_data = generate_gauss_ev44_events(201)
+        f144_data = generate_gauss_f144_data(201)
+        ev44_data = generate_gauss_ev44_events(401)
         for i, data in enumerate(f144_data):
             self.consumers[0].add_message('topic', 0, i + 1, None, data)
         for i, data in enumerate(ev44_data):
             self.consumers[1].add_message('topic', 0, i + 1, None, data)
 
-    def create_consumer(self, broker, topic, source):
+    def create_consumer(self, broker, topic):
+        return self.consumers.pop(0)
+
+
+class FaultyConsumerFactoryStub:
+    def __init__(self):
+        self.consumers = [ConsumerStub({}), ConsumerStub({})]
+        f144_data = generate_gauss_f144_data(201)
+        ev44_data = generate_gauss_ev44_events(401)
+        for i, data in enumerate(f144_data):
+            if i % 20 == 0:
+                self.consumers[0].add_message('topic', 0, i + 1, None, None)
+            elif i % 40 == 0:
+                self.consumers[0].add_exception_message('topic', 0, i + 1, None, data)
+            else:
+                self.consumers[0].add_message('topic', 0, i + 1, None, data)
+        for i, data in enumerate(ev44_data):
+            if i % 30 == 0:
+                self.consumers[1].add_message('topic', 0, i + 1, None, None)
+            elif i % 20 == 0:
+                self.consumers[1].add_exception_message('topic', 0, i + 1, None, data)
+            else:
+                self.consumers[1].add_message('topic', 0, i + 1, None, data)
+
+    def create_consumer(self, broker, topic):
         return self.consumers.pop(0)
 
 
@@ -63,7 +89,7 @@ class ProducerFactoryStub:
     def __init__(self):
         self.producers = [ProducerSpy({}), ProducerSpy({}), ProducerSpy({})]
 
-    def create_producer(self, broker, topic):
+    def create_producer(self, broker):
         return self.producers.pop(0)
 
 
@@ -366,3 +392,178 @@ class TestStateMachineSupervisorActor:
 
         assert np.allclose(optima, 5., atol=0.1)
         assert len(ev44_source_1_data) == len(f144_source_1_data)
+
+
+class TestStateMachineSupervisorActorWithFaultyConsumers:
+    @pytest.fixture
+    def supervisor(self):
+        supervisor = StateMachineSupervisorActor.start(
+            None,
+            [
+                ConsumerSupervisorActor,
+                ProducerSupervisorActor,
+                DataHandlerSupervisorActor,
+                InterpolatorActor,
+                FitterActor,
+                CommanderActor,
+            ],
+            FaultyConsumerFactoryStub(),
+            ProducerFactoryStub(),
+        )
+
+        self.commander_consumer = ConsumerStub({})
+        self.commander_consumer.add_message('command_topic', 0, 1, None,
+                                            ('{"command": "CONFIG", "config": ' + json.dumps(CONFIG) + '}').encode(
+                                                'utf-8')
+                                            )
+        self.commander_consumer.add_message('command_topic', 0, 2, None, '{"command": "START"}'.encode('utf-8'))
+
+        yield supervisor
+        pykka.ActorRegistry.stop_all()
+
+    def test_spawn_all_workers_and_run_data_through_pipeline_when_bad_data(self, supervisor):
+        commander_logic = CommanderLogic(self.commander_consumer)
+        commander_actor = supervisor.proxy().workers_by_type.get()['CommanderActor']
+        commander_actor.ask({'command': 'SET_LOGIC', 'logic': commander_logic})
+
+        time.sleep(0.1)
+        commander_actor.ask({'command': 'START'})
+        time.sleep(0.5)
+        commander_actor.ask({'command': 'STOP'})
+
+        worker_by_type = supervisor.proxy().workers_by_type.get()
+        producer_supervisor = worker_by_type['ProducerSupervisorActor']
+        datahandler_supervisor = worker_by_type['DataHandlerSupervisorActor']
+        consumer_supervisor = worker_by_type['ConsumerSupervisorActor']
+        interpolator_actor = worker_by_type['InterpolatorActor']
+        fitter_actor = worker_by_type['FitterActor']
+
+        producer_urns = list(producer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+        producer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in producer_urns]
+        datahandler_urns = list(datahandler_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+        datahandler_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in datahandler_urns]
+        consumer_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+        consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_urns]
+
+        assert len(producer_actors) == 3
+        assert len(datahandler_actors) == 2
+        assert len(consumer_actors) == 2
+
+        for consumer_actor in consumer_actors:
+            consumer_actor.tell({'command': 'START'})
+
+        time.sleep(5)  # Give time for consumers to fail and restart a bunch of times
+
+        consumer_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+        consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_urns]
+
+        for consumer_actor in consumer_actors:
+            consumer_actor.tell({'command': 'STOP'})
+
+        time.sleep(1)  # Give time for consumers to stop and all other actors to finish
+
+        producer_spy_fitt = supervisor.proxy().producers.get()[0]
+        producer_spy_inte = supervisor.proxy().producers.get()[1]
+
+        received_data_from_fitter_producer = deserialise_f144(producer_spy_fitt.data[-1]['value'])
+        received_data_from_interpolator_producer = [deserialise_f144(dat['value']) for dat in producer_spy_inte.data]
+
+        reduced_interpolator_data = {}
+        for dat in received_data_from_interpolator_producer:
+            reduced_interpolator_data[dat.source_name] = dat.value
+
+        computed_fit_params = received_data_from_fitter_producer.value
+        print(computed_fit_params)
+        optima = computed_fit_params[2]
+        ev44_source_1_data = reduced_interpolator_data['ev44_source_1']
+        f144_source_1_data = reduced_interpolator_data['f144_source_1']
+
+        import matplotlib.pyplot as plt
+        plt.plot(f144_source_1_data, ev44_source_1_data, 'g', label='data')
+        plt.vlines(optima, 80, 120, label='optima', linewidth=3)
+        plt.show()
+
+        assert np.allclose(optima, 5., atol=0.1)
+        assert len(ev44_source_1_data) == len(f144_source_1_data)
+
+    # TODO: Test for the future. Will leave it for now.
+    # def test_spawn_all_workers_and_run_data_through_pipeline_when_interpolator_crashes(self, supervisor, mocker):
+    #
+    #     mock_on_receive = mocker.patch.object(InterpolatorActor, 'on_receive')
+    #
+    #     def side_effect(*args, **kwargs):
+    #         if mock_on_receive.call_count == 100:
+    #             print("Exception raised after 100 calls")
+    #             raise ValueError("Exception raised after 100 calls")
+    #         else:
+    #             # print("Original on_receive called")
+    #             return original_on_receive(*args, **kwargs)  # Original on_receive function
+    #
+    #     commander_logic = CommanderLogic(self.commander_consumer)
+    #     commander_actor = supervisor.proxy().workers_by_type.get()['CommanderActor']
+    #     commander_actor.ask({'command': 'SET_LOGIC', 'logic': commander_logic})
+    #
+    #     time.sleep(0.1)
+    #     commander_actor.ask({'command': 'START'})
+    #     time.sleep(0.5)
+    #     commander_actor.ask({'command': 'STOP'})
+    #
+    #     worker_by_type = supervisor.proxy().workers_by_type.get()
+    #     producer_supervisor = worker_by_type['ProducerSupervisorActor']
+    #     datahandler_supervisor = worker_by_type['DataHandlerSupervisorActor']
+    #     consumer_supervisor = worker_by_type['ConsumerSupervisorActor']
+    #     interpolator_actor = worker_by_type['InterpolatorActor']
+    #     fitter_actor = worker_by_type['FitterActor']
+    #
+    #     # Backup of the original method
+    #     original_on_receive = interpolator_actor.proxy().on_receive
+    #     # Assign the side effect to the mocked method
+    #     mock_on_receive.side_effect = side_effect
+    #
+    #     producer_urns = list(producer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+    #     producer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in producer_urns]
+    #     datahandler_urns = list(datahandler_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+    #     datahandler_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in datahandler_urns]
+    #     consumer_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+    #     consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_urns]
+    #
+    #     assert len(producer_actors) == 3
+    #     assert len(datahandler_actors) == 2
+    #     assert len(consumer_actors) == 2
+    #
+    #     for consumer_actor in consumer_actors:
+    #         consumer_actor.tell({'command': 'START'})
+    #
+    #     time.sleep(5)  # Give time for consumers to fail and restart a bunch of times
+    #
+    #     consumer_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+    #     consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_urns]
+    #
+    #     for consumer_actor in consumer_actors:
+    #         consumer_actor.tell({'command': 'STOP'})
+    #
+    #     time.sleep(1)  # Give time for consumers to stop and all other actors to finish
+    #
+    #     producer_spy_fitt = supervisor.proxy().producers.get()[0]
+    #     producer_spy_inte = supervisor.proxy().producers.get()[1]
+    #
+    #     received_data_from_fitter_producer = deserialise_f144(producer_spy_fitt.data[-1]['value'])
+    #     received_data_from_interpolator_producer = [deserialise_f144(dat['value']) for dat in producer_spy_inte.data]
+    #
+    #     reduced_interpolator_data = {}
+    #     for dat in received_data_from_interpolator_producer:
+    #         reduced_interpolator_data[dat.source_name] = dat.value
+    #
+    #     computed_fit_params = received_data_from_fitter_producer.value
+    #     print(computed_fit_params)
+    #     optima = computed_fit_params[2]
+    #     ev44_source_1_data = reduced_interpolator_data['ev44_source_1']
+    #     f144_source_1_data = reduced_interpolator_data['f144_source_1']
+    #
+    #     import matplotlib.pyplot as plt
+    #     plt.plot(f144_source_1_data, ev44_source_1_data, 'g', label='data')
+    #     plt.vlines(optima, 80, 120, label='optima', linewidth=3)
+    #     plt.show()
+    #
+    #     assert np.allclose(optima, 5., atol=0.1)
+    #     assert len(ev44_source_1_data) == len(f144_source_1_data)

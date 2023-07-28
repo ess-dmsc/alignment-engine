@@ -17,13 +17,19 @@ class ProducerActor(pykka.ThreadingActor):
     def set_producer_logic(self, producer_logic):
         self.producer_logic = producer_logic
 
+    def get_config(self):
+        config = {
+            'producer_logic': self.producer_logic,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.producer_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
-        self.producer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.producer_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):

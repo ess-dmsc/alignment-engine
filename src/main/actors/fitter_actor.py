@@ -22,13 +22,20 @@ class FitterActor(pykka.ThreadingActor):
     def set_fitter_logic(self, fitter_logic):
         self.fitter_logic = fitter_logic
 
+    def get_config(self):
+        config = {
+            'fitter_logic': self.fitter_logic,
+            'producer_actor': self.producer_actor,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
-        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):
@@ -71,8 +78,9 @@ class FitterActor(pykka.ThreadingActor):
                 print(f"Fitter error: {e}")
             try:
                 result = self.get_results()
-                if result and self.producer_actor:
-                    self.producer_actor.tell({'data': result})
+                if result:
+                    if self.producer_actor is not None and self.producer_actor.is_alive():
+                        self.producer_actor.tell({'data': result})
             except Exception as e:
                 print(f"Error getting and sending results from Fitter: {e}")
         else:
@@ -98,6 +106,7 @@ class FitterLogic:
         self.readout_signals = []
         self.conf = {}
         self.fit_data_dict = {}
+        self.last_best_fit = {}
 
     def set_conf(self, conf):
         fit_function = conf.get('fit_function', None)
@@ -129,16 +138,23 @@ class FitterLogic:
             self._fit_gauss()
 
     def _fit_gauss(self):
-        popts, r_squareds = fit_gaussian(
+        popts, r_squareds, mses = fit_gaussian(
             *self.control_data.values(),
             *self.readout_data.values(),
         )
-        for sender, popt, r_squared in zip(self.control_signals, popts, r_squareds):
-            self.fit_data_dict[sender] = {
-                'fit_params': popt,
-                'r_squared': r_squared,
-                'fit_function': 'gauss',
-            }
+        for sender, popt, r_squared, mse in zip(self.control_signals, popts, r_squareds, mses):
+            if r_squared != 0:
+                self.fit_data_dict[sender] = {
+                    'fit_params': popt,
+                    'r_squared': r_squared,
+                    'mean_squared_error': mse,
+                    'fit_function': 'gauss',
+                }
+                if mse < self.last_best_fit.get(sender, {}).get('mean_squared_error', 10000000.):
+                    self.last_best_fit[sender] = self.fit_data_dict[sender]
+
+            if self.last_best_fit:
+                self.fit_data_dict[sender] = self.last_best_fit[sender]
 
     def get_results(self):
         return self.fit_data_dict
@@ -184,10 +200,10 @@ def fit_gaussian(x_vec, y_vec):
         )
     except ValueError as e:
         print(f"ValueError in curve_fit: {e}. Returning zeroes.")
-        return [0., 0., 0., 0.], 0.
+        return [[0., 0., 0., 0.]], [0.], [0.]
     except RuntimeError as e:
         print(f"RuntimeError in curve_fit: {e}. Returning zeroes.")
-        return [0., 0., 0., 0.], 0.
+        return [[0., 0., 0., 0.]], [0.], [0.]
 
     # Confidence interval (standard deviation)
     perr = np.sqrt(np.diag(pcov))
@@ -198,13 +214,15 @@ def fit_gaussian(x_vec, y_vec):
     ss_tot = np.sum((y_vec - np.mean(y_vec)) ** 2)
     r_squared = 1 - (ss_res / ss_tot)
 
+    mean_squared_error = np.mean(residuals**2)
+
     if r_squared < 0.5:
         # print("R-squared of fit is less than 0.5, returning zeroes.")
-        return [0., 0., 0., 0.], 0.
+        return [[0., 0., 0., 0.]], [0.], [0.]
 
     popt[3] = abs(popt[3])
 
-    return [popt], [r_squared]
+    return [popt], [r_squared], [mean_squared_error]
 
 
 def _optimal_position_smooth(dev_vals, det_vals, gauss_factor=0.1):

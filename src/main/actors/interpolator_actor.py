@@ -23,6 +23,14 @@ class InterpolatorActor(pykka.ThreadingActor):
     def set_interpolator_logic(self, interpolator_logic):
         self.interpolator_logic = interpolator_logic
 
+    def get_config(self):
+        config = {
+            'interpolator_logic': self.interpolator_logic,
+            'fitter_actor': self.fitter_actor,
+            'producer_actor': self.producer_actor,
+        }
+        return config
+
     def on_start(self):
         print(f"Starting {self.__class__.__name__}")
         self.state_machine_supervisor.tell({'command': 'REGISTER', 'actor': self.actor_ref})
@@ -31,7 +39,7 @@ class InterpolatorActor(pykka.ThreadingActor):
         self.status = 'RUNNING'
 
     def on_failure(self, exception_type, exception_value, traceback):
-        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref})
+        self.state_machine_supervisor.tell({'command': 'FAILED', 'actor': self.actor_ref, 'actor_class_name': self.__class__.__name__, 'last_config': self.get_config()})
 
     def on_receive(self, message):
         if not isinstance(message, dict):
@@ -74,7 +82,7 @@ class InterpolatorActor(pykka.ThreadingActor):
                 if result:
                     if self.fitter_actor is not None:
                         self.fitter_actor.tell({'data': result})
-                    if self.producer_actor is not None:
+                    if self.producer_actor is not None and self.producer_actor.is_alive():
                         self.producer_actor.tell({'data': result})
             except Exception as e:
                 print(f"Error getting and sending results from Interpolator: {e}")
@@ -153,7 +161,9 @@ class InterpolatorLogic:
         interp_funcs = []
         interp_data = []
         for ts, data in ts_data_pairs:
-            interp = interp1d(ts, data, kind='linear', fill_value='extrapolate')
+            # fill_value = data[-1]
+            fill_value = 'extrapolate'
+            interp = interp1d(ts, data, kind='linear', fill_value=fill_value, bounds_error=False)
             interp_funcs.append(interp)
             interp_data.append(interp(common_ts))
 

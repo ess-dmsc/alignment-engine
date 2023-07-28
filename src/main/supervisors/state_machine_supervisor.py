@@ -24,7 +24,7 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         self.consumer_factory = consumer_factory
         self.producer_factory = producer_factory
 
-        self.producers = [self.producer_factory.create_producer(broker='localhost:9092', topic='output_topic') for _ in range(3)]
+        self.producers = [self.producer_factory.create_producer(broker='localhost:9092') for _ in range(3)]
 
     def on_start(self):
         # print(f"Starting {self.__class__.__name__}")
@@ -41,7 +41,6 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
 
     def on_receive(self, message):
         command = message.get('command')
-        print(f"Received command {command}")
 
         if command == 'REGISTER':
             actor = message.get('actor')
@@ -49,16 +48,22 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
 
         elif command == 'FAILED':
             actor = message.get('actor')
+            last_config = message.get('last_config', None)
+            actor_class_name = message.get('actor_class_name')
             if actor.actor_urn not in self.workers:
                 print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Not this supervisor's worker")
                 return
-            # print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Restarting...")
-            worker_class = self.worker_classes.get(actor.__class__.__name__, None)
+            print(f"{actor.__class__.__name__} {actor.actor_urn} has died. Restarting...")
+            worker_class = self.worker_classes.get(actor_class_name, None)
+            if last_config is not None:
+                self.workers_configs[actor.actor_urn] = last_config
             actor_config = self.workers_configs[actor.actor_urn]
             new_actor = worker_class.start(self.actor_ref, **actor_config)
-            # print(f"New {new_actor.__class__.__name__} {new_actor.actor_urn} has been started")
+            print(f"New {new_actor.__class__.__name__} {new_actor.actor_urn} has been started")
             del self.workers[actor.actor_urn]
             self.workers[new_actor.actor_urn] = new_actor
+            self.workers_by_type[actor_class_name] = new_actor
+            # self.relink_workers(actor_class_name)
 
         elif command == 'SPAWN':
             config = message.get('config', None)
@@ -93,6 +98,7 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         data = message.get('data', None)
 
         if data is not None:
+            print(data)
             self.handle_external_command(data)
 
     def handle_external_command(self, data):
@@ -165,7 +171,7 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_actor_urns]
         source_names = [d['source'] for d in config['stream_configs'].values()]
         topic_names = [d['topic'] for d in config['stream_configs'].values()]
-        consumers = [self.consumer_factory.create_consumer(broker='localhost:9092', topic=topic_names[i], source=source_names[i]) for i in range(len(consumer_actors))]
+        consumers = [self.consumer_factory.create_consumer(broker='localhost:9092', topic=topic_names[i]) for i in range(len(consumer_actors))]
         consumer_logics = [ConsumerLogic(consumers[i], source_name=source_names[i]) for i in range(len(consumer_actors))]
         for consumer_actor, consumer_logic in zip(consumer_actors, consumer_logics):
             consumer_actor.tell({'command': 'SET_LOGIC', 'logic': consumer_logic})
@@ -197,6 +203,14 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
         producer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in producer_actors_urns]
         for producer_actor, producer_logic in zip(producer_actors, producer_logics):
             producer_actor.tell({'command': 'SET_LOGIC', 'logic': producer_logic})
+
+    # TODO: Implement this
+    # def relink_workers(self, actor_class_name):
+    #     if actor_class_name == 'InterpolatorActor':
+    #         print("Relinking InterpolatorActor")
+    #         self.link_datahandlers_to_interpolator()
+    #         self.link_interpolator_to_fitter()
+    #         self.link_interpolator_to_producer()
 
     def spawn_consumer_supervisor(self, num_workers):
         self.workers_by_type['ConsumerSupervisorActor'].ask({'command': 'SPAWN', 'config': {
