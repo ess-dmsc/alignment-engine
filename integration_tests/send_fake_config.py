@@ -28,6 +28,8 @@ CONFIG_JSON = b"""
 }
 """
 
-producer = Producer({"bootstrap.servers": 'localhost:9092', "message.max.bytes": 100_000_000})
-producer.produce("alien_commands", CONFIG_JSON)
-producer.flush()
+
+def produce_config():
+    producer = Producer({"bootstrap.servers": 'localhost:9092', "message.max.bytes": 100_000_000})
+    producer.produce("alien_commands", CONFIG_JSON)
+    producer.flush()
