@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 import pykka
-from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
+from alignment_engine.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
 
 
 class TestInterpolatorActor:

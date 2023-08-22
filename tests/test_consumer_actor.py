@@ -9,7 +9,7 @@ import pykka
 import pytest
 from pykka import ActorDeadError
 
-from src.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
+from alignment_engine.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
 from tests.doubles.consumer import ConsumerStub
 
 from streaming_data_types import serialise_f144, serialise_ev44, deserialise_f144, deserialise_ev44

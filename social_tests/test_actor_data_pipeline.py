@@ -1,3 +1,11 @@
+import os
+import sys
+
+current_directory = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(current_directory, '..')
+alignment_engine_path = os.path.join(project_root, 'alignment_engine')
+sys.path.append(alignment_engine_path)
+
 import time
 
 import numpy as np
@@ -5,14 +13,14 @@ import pytest
 from unittest.mock import MagicMock
 from pykka import ActorRegistry
 
-from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
-from src.main.actors.producer_actor import ProducerLogic, ProducerActor
+from alignment_engine.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
+from alignment_engine.main.actors.producer_actor import ProducerLogic, ProducerActor
 from tests.doubles.consumer import ConsumerStub
 from tests.doubles.producer import ProducerSpy
 from tests.test_consumer_actor import generate_fake_ev44_events, generate_fake_f144_data
-from src.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
-from src.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
-from src.main.actors.fitter_actor import FitterActor, FitterLogic, gauss_func
+from alignment_engine.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
+from alignment_engine.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
+from alignment_engine.main.actors.fitter_actor import FitterActor, FitterLogic, gauss_func
 
 from streaming_data_types import deserialise_ev44, deserialise_f144, serialise_ev44, serialise_f144
 

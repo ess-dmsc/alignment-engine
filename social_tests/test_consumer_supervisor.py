@@ -1,11 +1,19 @@
+import os
+import sys
+
+current_directory = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(current_directory, '..')
+alignment_engine_path = os.path.join(project_root, 'alignment_engine')
+sys.path.append(alignment_engine_path)
+
 import time
 
 import pytest
 import pykka
 
 from unittest.mock import MagicMock, patch
-from src.main.supervisors.consumer_supervisor import ConsumerSupervisorActor
-from src.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
+from alignment_engine.main.supervisors.consumer_supervisor import ConsumerSupervisorActor
+from alignment_engine.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
 from tests.doubles.consumer import ConsumerStub
 from tests.test_consumer_actor import generate_fake_f144_data
 

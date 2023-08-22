@@ -4,7 +4,7 @@ import pykka
 import pytest
 import numpy as np
 
-from src.main.actors.fitter_actor import FitterLogic, FitterActor, gauss_func
+from alignment_engine.main.actors.fitter_actor import FitterLogic, FitterActor, gauss_func
 
 
 def generate_fake_data_dict():

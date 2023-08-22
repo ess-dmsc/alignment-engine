@@ -1,4 +1,4 @@
-from src.main.supervisors.base_supervisor import BaseSupervisorActor
+from main.supervisors.base_supervisor import BaseSupervisorActor
 
 
 class ProducerSupervisorActor(BaseSupervisorActor):

@@ -1,13 +1,10 @@
-import json
-import time
-
 import pykka
 
-from src.main.actors.consumer_actor import ConsumerActor, ConsumerLogic
-from src.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
-from src.main.actors.fitter_actor import FitterLogic
-from src.main.actors.interpolator_actor import InterpolatorLogic
-from src.main.actors.producer_actor import ProducerActor, ProducerLogic
+from main.actors.consumer_actor import ConsumerActor, ConsumerLogic
+from main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
+from main.actors.fitter_actor import FitterLogic
+from main.actors.interpolator_actor import InterpolatorLogic
+from main.actors.producer_actor import ProducerActor, ProducerLogic
 
 
 class StateMachineSupervisorActor(pykka.ThreadingActor):
@@ -127,6 +124,21 @@ class StateMachineSupervisorActor(pykka.ThreadingActor):
             self.link_interpolator_to_fitter()
             self.link_datahandlers_to_interpolator()
             self.link_consumers_to_datahandlers()
+
+        elif command == 'START':
+            consumer_supervisor = self.workers_by_type['ConsumerSupervisorActor']
+            consumer_actor_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+            consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_actor_urns]
+            for consumer_actor in consumer_actors:
+                consumer_actor.tell({'command': 'START'})
+
+        elif command == 'STOP':
+            consumer_supervisor = self.workers_by_type['ConsumerSupervisorActor']
+            consumer_actor_urns = list(consumer_supervisor.ask({'command': 'STATUS'})['worker_statuses'].keys())
+            consumer_actors = [pykka.ActorRegistry.get_by_urn(urn) for urn in consumer_actor_urns]
+            for consumer_actor in consumer_actors:
+                consumer_actor.tell({'command': 'STOP'})
+
 
     def link_consumers_to_datahandlers(self):
         consumer_supervisor = self.workers_by_type['ConsumerSupervisorActor']

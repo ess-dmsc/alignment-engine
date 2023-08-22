@@ -1,3 +1,11 @@
+import os
+import sys
+
+current_directory = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(current_directory, '..')
+alignment_engine_path = os.path.join(project_root, 'alignment_engine')
+sys.path.append(alignment_engine_path)
+
 import time
 
 import pytest
@@ -7,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 from streaming_data_types import deserialise_f144, deserialise_x5f2
 
-from src.main.supervisors.producer_supervisor import ProducerSupervisorActor
-from src.main.actors.producer_actor import ProducerActor, ProducerLogic
+from alignment_engine.main.supervisors.producer_supervisor import ProducerSupervisorActor
+from alignment_engine.main.actors.producer_actor import ProducerActor, ProducerLogic
 from tests.doubles.producer import ProducerSpy
 
 PLOT_MESSAGE = {

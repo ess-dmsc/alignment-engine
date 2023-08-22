@@ -1,3 +1,11 @@
+import os
+import sys
+
+current_directory = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(current_directory, '..')
+alignment_engine_path = os.path.join(project_root, 'alignment_engine')
+sys.path.append(alignment_engine_path)
+
 import json
 import time
 from unittest.mock import patch
@@ -8,16 +16,16 @@ import pykka
 from pytest_mock import mocker
 from streaming_data_types import deserialise_f144
 
-from src.main.actors.consumer_actor import ConsumerActor
-from src.main.actors.data_handler_actor import DataHandlerActor
-from src.main.actors.producer_actor import ProducerActor, ProducerLogic
-from src.main.supervisors.consumer_supervisor import ConsumerSupervisorActor
-from src.main.supervisors.producer_supervisor import ProducerSupervisorActor
-from src.main.supervisors.state_machine_supervisor import StateMachineSupervisorActor
-from src.main.supervisors.data_handler_supervisor import DataHandlerSupervisorActor
-from src.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
-from src.main.actors.fitter_actor import FitterActor, FitterLogic
-from src.main.actors.commander_actor import CommanderActor, CommanderLogic
+from alignment_engine.main.actors.consumer_actor import ConsumerActor
+from alignment_engine.main.actors.data_handler_actor import DataHandlerActor
+from alignment_engine.main.actors.producer_actor import ProducerActor, ProducerLogic
+from alignment_engine.main.supervisors.consumer_supervisor import ConsumerSupervisorActor
+from alignment_engine.main.supervisors.producer_supervisor import ProducerSupervisorActor
+from alignment_engine.main.supervisors.state_machine_supervisor import StateMachineSupervisorActor
+from alignment_engine.main.supervisors.data_handler_supervisor import DataHandlerSupervisorActor
+from alignment_engine.main.actors.interpolator_actor import InterpolatorActor, InterpolatorLogic
+from alignment_engine.main.actors.fitter_actor import FitterActor, FitterLogic
+from alignment_engine.main.actors.commander_actor import CommanderActor, CommanderLogic
 from tests.doubles.consumer import ConsumerStub
 from tests.doubles.producer import ProducerSpy
 
@@ -478,10 +486,10 @@ class TestStateMachineSupervisorActorWithFaultyConsumers:
         ev44_source_1_data = reduced_interpolator_data['ev44_source_1']
         f144_source_1_data = reduced_interpolator_data['f144_source_1']
 
-        import matplotlib.pyplot as plt
-        plt.plot(f144_source_1_data, ev44_source_1_data, 'g', label='data')
-        plt.vlines(optima, 80, 120, label='optima', linewidth=3)
-        plt.show()
+        # import matplotlib.pyplot as plt
+        # plt.plot(f144_source_1_data, ev44_source_1_data, 'g', label='data')
+        # plt.vlines(optima, 80, 120, label='optima', linewidth=3)
+        # plt.show()
 
         assert np.allclose(optima, 5., atol=0.1)
         assert len(ev44_source_1_data) == len(f144_source_1_data)

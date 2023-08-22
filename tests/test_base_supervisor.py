@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 import pykka
 
-from src.main.supervisors.base_supervisor import BaseSupervisorActor
+from alignment_engine.main.supervisors.base_supervisor import BaseSupervisorActor
 from tests.doubles.workers import TestWorkerActor, TestWorkerActor2
 
 

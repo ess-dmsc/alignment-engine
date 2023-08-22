@@ -9,8 +9,8 @@ from pykka import ActorDeadError
 from queue import Queue
 from streaming_data_types import deserialise_f144, deserialise_ev44, serialise_f144, serialise_ev44
 
-from src.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
-from src.main.actors.interpolator_actor import InterpolatorActor
+from alignment_engine.main.actors.data_handler_actor import DataHandlerActor, DataHandlerLogic
+from alignment_engine.main.actors.interpolator_actor import InterpolatorActor
 
 
 def generate_fake_ev44_events(num_messages, source_name="ev44_source_1"):
@@ -371,7 +371,7 @@ def test_exception_during_data_processing(data_handler, monkeypatch):
     def mock_crash(*args, **kwargs):
         raise ValueError("Something went wrong!")
 
-    monkeypatch.setattr("src.main.actors.data_handler_actor.DataHandlerLogic.on_data_received", mock_crash)
+    monkeypatch.setattr("alignment_engine.main.actors.data_handler_actor.DataHandlerLogic.on_data_received", mock_crash)
 
     with pytest.raises(ValueError):
         fake_data = generate_fake_f144_data(1)

@@ -8,7 +8,7 @@ import pykka
 import pytest
 from confluent_kafka import KafkaException
 
-from src.main.actors.commander_actor import CommanderActor, CommanderLogic
+from alignment_engine.main.actors.commander_actor import CommanderActor, CommanderLogic
 from tests.doubles.consumer import ConsumerStub
 
 COMMAND_TOPIC = 'command_topic'

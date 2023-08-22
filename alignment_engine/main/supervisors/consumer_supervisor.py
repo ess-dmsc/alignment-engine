@@ -1,14 +1,4 @@
-import time
-
-import pykka
-from confluent_kafka import Consumer
-from pykka import ActorRegistry
-
-from src.main.actors.consumer_actor import ConsumerLogic
-from src.main.actors.data_handler_actor import DataHandlerActor
-from src.main.actors.producer_actor import ProducerActor
-from src.main.supervisors.base_supervisor import BaseSupervisorActor
-from tests.doubles.consumer import ConsumerStub
+from main.supervisors.base_supervisor import BaseSupervisorActor
 
 
 class ConsumerSupervisorActor(BaseSupervisorActor):

@@ -1,15 +1,21 @@
 import time
 import pykka
 
-from src.main.actors.commander_actor import CommanderActor, CommanderLogic
-from src.main.actors.fitter_actor import FitterActor
-from src.main.actors.interpolator_actor import InterpolatorActor
-from src.main.kafka_factories.consumer import ConsumerFactory
-from src.main.kafka_factories.producer import ProducerFactory
-from src.main.supervisors.consumer_supervisor import ConsumerSupervisorActor
-from src.main.supervisors.data_handler_supervisor import DataHandlerSupervisorActor
-from src.main.supervisors.producer_supervisor import ProducerSupervisorActor
-from src.main.supervisors.state_machine_supervisor import StateMachineSupervisorActor
+# import os
+# import sys
+#
+# cwd = os.getcwd()
+# sys.path.append(cwd)
+
+from main.actors.commander_actor import CommanderActor, CommanderLogic
+from main.actors.fitter_actor import FitterActor
+from main.actors.interpolator_actor import InterpolatorActor
+from main.kafka_factories.consumer import ConsumerFactory
+from main.kafka_factories.producer import ProducerFactory
+from main.supervisors.consumer_supervisor import ConsumerSupervisorActor
+from main.supervisors.data_handler_supervisor import DataHandlerSupervisorActor
+from main.supervisors.producer_supervisor import ProducerSupervisorActor
+from main.supervisors.state_machine_supervisor import StateMachineSupervisorActor
 
 
 def main():
@@ -35,9 +41,8 @@ def main():
 
         time.sleep(0.5)
 
+        commander_actor.ask({'command': 'START'})
         while True:  # Infinite loop
-            commander_actor.ask({'command': 'START'})
-
             time.sleep(0.5)  # you may adjust this time or remove it entirely
 
     except KeyboardInterrupt:

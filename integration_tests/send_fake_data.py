@@ -24,7 +24,7 @@ def generate_and_produce_data():
             idx_2 += 1
             producer.flush()
 
-        time.sleep(0.1)
+        time.sleep(0.01)
 
         if idx_2 < 400:
             producer.produce("event_data", ev44_data[idx_2])
@@ -34,6 +34,8 @@ def generate_and_produce_data():
         else:
             break
 
-        time.sleep(0.1)
+        time.sleep(0.01)
 
 
+if __name__ == "__main__":
+    generate_and_produce_data()

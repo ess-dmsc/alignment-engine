@@ -8,7 +8,7 @@ from pykka import ActorDeadError
 from streaming_data_types import deserialise_f144, serialise_x5f2, deserialise_x5f2
 
 from tests.doubles.producer import ProducerSpy
-from src.main.actors.producer_actor import ProducerActor, ProducerLogic
+from alignment_engine.main.actors.producer_actor import ProducerActor, ProducerLogic
 
 
 class TestProducerActor:
